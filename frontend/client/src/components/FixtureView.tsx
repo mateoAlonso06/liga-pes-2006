@@ -1,0 +1,169 @@
+import React, { useMemo } from "react";
+import type { FixtureRound, Player } from "../domain/types";
+import { buildWeeklyFixture } from "../domain/fixture";
+
+interface FixtureViewProps {
+  rounds: FixtureRound[];
+  players: Player[];
+  selectedPlayerId: string;
+  onSelectPlayer: (id: string) => void;
+  format: "ida" | "ida_vuelta";
+  onChangeFormat: (format: "ida" | "ida_vuelta") => void;
+}
+
+export const FixtureView: React.FC<FixtureViewProps> = ({
+  rounds,
+  players,
+  selectedPlayerId,
+  onSelectPlayer,
+  format,
+  onChangeFormat,
+}) => {
+  const startDate = useMemo(() => {
+    return localStorage.getItem("pes_torneo_inicio") || undefined;
+  }, []);
+
+  const weeklyGroups = useMemo(() => {
+    return buildWeeklyFixture(rounds, 2, startDate);
+  }, [rounds, startDate]);
+
+  const currentWeek = useMemo(() => {
+    const found = weeklyGroups.find((w) => w.isCurrentWeek);
+    return found ? found.weekNumber : 1;
+  }, [weeklyGroups]);
+
+  if (players.length < 2) {
+    return (
+      <div className="empty-state">
+        Se necesitan al menos 2 participantes para generar el fixture del torneo.
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixture-container">
+      <div className="fixture-toolbar">
+        <div className="form-group">
+          <label htmlFor="playerFilter">Ver fixture de:</label>
+          <select
+            id="playerFilter"
+            className="form-select"
+            value={selectedPlayerId}
+            onChange={(e) => onSelectPlayer(e.target.value)}
+          >
+            <option value="">Todos los participantes</option>
+            {players.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="formatSelect">Formato:</label>
+          <select
+            id="formatSelect"
+            className="form-select"
+            value={format}
+            onChange={(e) => onChangeFormat(e.target.value as "ida" | "ida_vuelta")}
+          >
+            <option value="ida">Solo Ida</option>
+            <option value="ida_vuelta">Ida y Vuelta</option>
+          </select>
+        </div>
+      </div>
+
+      {weeklyGroups.length > 0 && (
+        <div className="week-info-banner">
+          <span>
+            Semana de competencia: <strong>{currentWeek}</strong> de{" "}
+            {weeklyGroups.length}
+          </span>
+        </div>
+      )}
+
+      <div className="weeks-list">
+        {weeklyGroups.map((week) => (
+          <div
+            key={week.weekNumber}
+            className={`semana-block ${week.isCurrentWeek ? "actual" : ""}`}
+          >
+            <div className="semana-header">
+              <h4>Semana {week.weekNumber}</h4>
+              {week.isCurrentWeek && (
+                <span className="semana-tag-actual">Semana Actual</span>
+              )}
+            </div>
+
+            <div className="rounds-list">
+              {week.rounds.map((round) => (
+                <div key={round.roundNumber} className="round-card">
+                  <div className="round-header">
+                    <h3>Fecha {round.roundNumber}</h3>
+                    <span className="round-count">{round.matches.length} partidos</span>
+                  </div>
+
+                  <div className="matches-list">
+                    {round.matches.map((match, idx) => {
+                      if (match.isBye) {
+                        return (
+                          <div key={idx} className="match-item match-bye">
+                            <span className="match-player">
+                              {match.playerAName}{" "}
+                              {match.teamAName ? `(${match.teamAName})` : ""}
+                            </span>
+                            <span className="chip chip-bye">Fecha Libre</span>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`match-item ${
+                            match.played ? "match-played" : "match-pending"
+                          }`}
+                        >
+                          <div className="match-side home">
+                            <span className="player-name">{match.playerAName}</span>
+                            <span className="team-name">{match.teamAName}</span>
+                          </div>
+
+                          <div className="match-center">
+                            {match.played ? (
+                              <div className="score-display">
+                                <span className="score-box">{match.goalsA}</span>
+                                <span className="score-divider">-</span>
+                                <span className="score-box">{match.goalsB}</span>
+                              </div>
+                            ) : (
+                              <span className="vs-badge">VS</span>
+                            )}
+                          </div>
+
+                          <div className="match-side away">
+                            <span className="player-name">{match.playerBName}</span>
+                            <span className="team-name">{match.teamBName}</span>
+                          </div>
+
+                          <div className="match-status">
+                            {match.played ? (
+                              <span className="chip chip-success">Jugado</span>
+                            ) : (
+                              <span className="chip chip-muted">Pendiente</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
