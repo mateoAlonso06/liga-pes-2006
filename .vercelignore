@@ -1,0 +1,7 @@
+# Ignore backend code so Vercel does not try to build it as Serverless Functions
+api/
+docs/
+backups/
+*.db
+*.db-shm
+*.db-wal
