@@ -2,6 +2,10 @@
   "name": "regional-t",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "frontend/client",
+    "api"
+  ],
   "scripts": {
     "dev": "npm run dev --prefix frontend/client",
     "build": "npm run build --prefix frontend/client",

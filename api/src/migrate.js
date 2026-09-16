@@ -7,7 +7,42 @@ export async function runMigration(customClient = null) {
 
   console.log('--- Iniciando Migración Multi-Torneo ---');
 
-  // 1. Crear tablas nuevas si no existen
+  // 1. Crear tablas base de usuarios si no existen
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS usuario (
+      id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      rol TEXT NOT NULL DEFAULT 'user' CHECK(rol IN ('admin', 'user')),
+      avatar_url TEXT NULL,
+      creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS sesion_refresh (
+      id_sesion INTEGER PRIMARY KEY AUTOINCREMENT,
+      id_usuario INTEGER NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expira_en TEXT NOT NULL,
+      revocado INTEGER NOT NULL DEFAULT 0,
+      creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Migrar admins legacy a la tabla usuario
+  const masterTables = (await db.execute("SELECT name FROM sqlite_master WHERE type='table'")).rows.map((r) => r.name);
+  if (masterTables.includes('admin')) {
+    const legacyAdmins = await db.execute('SELECT username, password_hash FROM admin');
+    for (const adm of legacyAdmins.rows) {
+      await db.execute({
+        sql: "INSERT OR IGNORE INTO usuario (username, password_hash, rol) VALUES (?, ?, 'admin')",
+        args: [adm.username, adm.password_hash],
+      });
+    }
+  }
+
+  // 1.b Crear tablas multi-torneo nuevas si no existen
   await db.execute(`
     CREATE TABLE IF NOT EXISTS juego (
       id_juego INTEGER PRIMARY KEY AUTOINCREMENT,
