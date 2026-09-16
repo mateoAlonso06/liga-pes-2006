@@ -6,7 +6,19 @@ const router = Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    const result = await db.execute('SELECT * FROM equipo');
+    const { id_juego } = req.query;
+    let sql = `
+      SELECT e.id_equipo, e.nombre, e.id_juego, j.nombre as juego_nombre
+      FROM equipo e
+      LEFT JOIN juego j ON e.id_juego = j.id_juego
+    `;
+    const args = [];
+    if (id_juego) {
+      sql += ' WHERE e.id_juego = ?';
+      args.push(id_juego);
+    }
+    sql += ' ORDER BY e.nombre ASC';
+    const result = await db.execute({ sql, args });
     res.json(result.rows);
   } catch (err) {
     next(err);
@@ -16,7 +28,10 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const result = await db.execute({
-      sql: 'SELECT * FROM equipo WHERE id_equipo = ?',
+      sql: `SELECT e.id_equipo, e.nombre, e.id_juego, j.nombre as juego_nombre
+            FROM equipo e
+            LEFT JOIN juego j ON e.id_juego = j.id_juego
+            WHERE e.id_equipo = ?`,
       args: [req.params.id],
     });
     if (result.rows.length === 0) {
@@ -30,16 +45,19 @@ router.get('/:id', async (req, res, next) => {
 
 router.post('/', requireAdmin, async (req, res, next) => {
   try {
-    const { nombre } = req.body;
+    const { nombre, id_juego } = req.body;
     if (typeof nombre !== 'string' || nombre.trim() === '') {
       return res.status(400).json({ error: 'nombre is required' });
     }
 
+    const cleanName = nombre.trim();
+    const cleanJuego = id_juego ? Number(id_juego) : 1;
+
     const result = await db.execute({
-      sql: 'INSERT INTO equipo (nombre) VALUES (?)',
-      args: [nombre],
+      sql: 'INSERT INTO equipo (nombre, id_juego) VALUES (?, ?)',
+      args: [cleanName, cleanJuego],
     });
-    res.status(201).json({ id_equipo: Number(result.lastInsertRowid), nombre });
+    res.status(201).json({ id_equipo: Number(result.lastInsertRowid), nombre: cleanName, id_juego: cleanJuego });
   } catch (err) {
     next(err);
   }

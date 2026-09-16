@@ -1,12 +1,20 @@
 import { createContext, useContext } from "react";
-import type { LoginCredentials } from "../services/api";
+import type { LoginCredentials, AuthUser } from "../services/api";
 
 export interface AuthContextType {
   token: string | null;
+  user: AuthUser | null;
   username: string | null;
+  avatarUrl: string | null;
+  role: "admin" | "user" | null;
+  isAdmin: boolean;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
-  logout: () => void;
+  register: (credentials: LoginCredentials) => Promise<void>;
+  logout: () => Promise<void>;
+  uploadAvatar: (file: File) => Promise<void>;
+  removeAvatar: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);

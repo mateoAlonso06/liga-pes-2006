@@ -8,16 +8,20 @@ interface LoginModalProps {
 }
 
 export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
-  const { login } = useAuth();
+  const { login, register } = useAuth();
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleClose = () => {
     setUsername("");
     setPassword("");
+    setConfirmPassword("");
     setError(null);
+    setMode("login");
     onClose();
   };
 
@@ -35,16 +39,36 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
     if (!username.trim() || !password) {
       setError("Completá usuario y contraseña");
       return;
     }
 
+    if (username.trim().length < 3) {
+      setError("El usuario debe tener al menos 3 caracteres");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+
+    if (mode === "register" && password !== confirmPassword) {
+      setError("Las contraseñas no coinciden");
+      return;
+    }
+
     setIsSubmitting(true);
-    setError(null);
 
     try {
-      await login({ username: username.trim(), password });
+      if (mode === "login") {
+        await login({ username: username.trim(), password });
+      } else {
+        await register({ username: username.trim(), password });
+      }
       handleClose();
       onSuccess?.();
     } catch (err) {
@@ -53,7 +77,7 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
           ? err.message === "Invalid credentials"
             ? "Usuario o contraseña incorrectos."
             : err.message
-          : "Error al iniciar sesión";
+          : "Error al autenticar";
       setError(message);
     } finally {
       setIsSubmitting(false);
@@ -73,17 +97,51 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
       }}
     >
       <div className="modal-box">
-        <button
-          type="button"
-          className="modal-close"
-          onClick={handleClose}
-          aria-label="Cerrar"
-        >
-          ✕
-        </button>
+        <div className="modal-header-row">
+          <div className="modal-title-wrap">
+            <h2 id="login-modal-title">
+              {mode === "login" ? "Iniciar Sesión" : "Crear Nueva Cuenta"}
+            </h2>
+            <p className="modal-sub">
+              {mode === "login"
+                ? "Accedé para gestionar la liga o interactuar como participante"
+                : "Registrate para enviar propuestas con tu usuario"}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="modal-close"
+            onClick={handleClose}
+            aria-label="Cerrar ventana"
+          >
+            ✕
+          </button>
+        </div>
 
-        <h2 id="login-modal-title">Acceso Admin</h2>
-        <p className="modal-sub">Ingresá tus credenciales para gestionar la liga</p>
+        <div className="auth-modal-tabs">
+          <button
+            type="button"
+            className={`btn ${mode === "login" ? "btn-gold" : "btn-secondary"}`}
+            style={{ flex: 1 }}
+            onClick={() => {
+              setMode("login");
+              setError(null);
+            }}
+          >
+            Iniciar Sesión
+          </button>
+          <button
+            type="button"
+            className={`btn ${mode === "register" ? "btn-gold" : "btn-secondary"}`}
+            style={{ flex: 1 }}
+            onClick={() => {
+              setMode("register");
+              setError(null);
+            }}
+          >
+            Crear Cuenta
+          </button>
+        </div>
 
         {error && (
           <div className="error-box" role="alert" style={{ width: "100%", marginBottom: "16px" }}>
@@ -99,7 +157,7 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
               type="text"
               className="form-input"
               autoComplete="username"
-              placeholder="admin"
+              placeholder="tu_usuario"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               disabled={isSubmitting}
@@ -114,7 +172,7 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
               id="login-password"
               type="password"
               className="form-input"
-              autoComplete="current-password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -123,6 +181,23 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
             />
           </div>
 
+          {mode === "register" && (
+            <div className="form-field">
+              <label htmlFor="login-confirm-password">Confirmar Contraseña</label>
+              <input
+                id="login-confirm-password"
+                type="password"
+                className="form-input"
+                autoComplete="new-password"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+          )}
+
           <div className="modal-actions" style={{ marginTop: "16px" }}>
             <button
               type="submit"
@@ -130,7 +205,13 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
               style={{ width: "100%" }}
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Verificando..." : "Ingresar"}
+              {isSubmitting
+                ? mode === "login"
+                  ? "Verificando..."
+                  : "Registrando..."
+                : mode === "login"
+                ? "Ingresar"
+                : "Crear Cuenta"}
             </button>
           </div>
         </form>

@@ -31,22 +31,34 @@ async function run() {
     return;
   }
 
-  const existing = await db.execute({
+  const existingAdmin = await db.execute({
     sql: 'SELECT id_admin FROM admin WHERE username = ?',
     args: [adminUser],
   });
 
-  if (existing.rows.length > 0) {
-    console.log(`Admin "${adminUser}" already exists, skipping.`);
-    return;
-  }
-
-  const passwordHash = await bcrypt.hash(adminPassword, 10);
-  await db.execute({
-    sql: 'INSERT INTO admin (username, password_hash) VALUES (?, ?)',
-    args: [adminUser, passwordHash],
+  const existingUsuario = await db.execute({
+    sql: 'SELECT id_usuario FROM usuario WHERE username = ?',
+    args: [adminUser],
   });
-  console.log(`Created admin "${adminUser}".`);
+
+  if (existingAdmin.rows.length === 0 || existingUsuario.rows.length === 0) {
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
+    if (existingAdmin.rows.length === 0) {
+      await db.execute({
+        sql: 'INSERT INTO admin (username, password_hash) VALUES (?, ?)',
+        args: [adminUser, passwordHash],
+      });
+    }
+    if (existingUsuario.rows.length === 0) {
+      await db.execute({
+        sql: "INSERT INTO usuario (username, password_hash, rol) VALUES (?, ?, 'admin')",
+        args: [adminUser, passwordHash],
+      });
+    }
+    console.log(`Created/synced admin "${adminUser}" with rol 'admin'.`);
+  } else {
+    console.log(`Admin "${adminUser}" already exists in admin and usuario.`);
+  }
 }
 
 run()

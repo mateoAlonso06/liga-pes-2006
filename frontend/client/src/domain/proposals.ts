@@ -59,6 +59,7 @@ export interface CreateProposalPayload {
     personaId: number;
   }>;
   nombre_solicitante: string;
+  id_torneo?: number | null;
 }
 
 /**

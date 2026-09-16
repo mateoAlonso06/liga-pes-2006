@@ -1,12 +1,14 @@
 import React, { useMemo } from "react";
 import type { FixtureRound, Player } from "../domain/types";
 import { buildWeeklyFixture } from "../domain/fixture";
+import { UserAvatar } from "./UserAvatar";
 
 interface FixtureViewProps {
   rounds: FixtureRound[];
   players: Player[];
   selectedPlayerId: string;
   onSelectPlayer: (id: string) => void;
+  onInspectPlayer?: (playerId: string) => void;
   format: "ida" | "ida_vuelta";
   onChangeFormat: (format: "ida" | "ida_vuelta") => void;
 }
@@ -16,6 +18,7 @@ export const FixtureView: React.FC<FixtureViewProps> = ({
   players,
   selectedPlayerId,
   onSelectPlayer,
+  onInspectPlayer,
   format,
   onChangeFormat,
 }) => {
@@ -109,9 +112,17 @@ export const FixtureView: React.FC<FixtureViewProps> = ({
                       if (match.isBye) {
                         return (
                           <div key={idx} className="match-item match-bye">
-                            <span className="match-player">
-                              {match.playerAName}{" "}
-                              {match.teamAName ? `(${match.teamAName})` : ""}
+                            <span className="match-player" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                              <UserAvatar
+                                name={match.playerAName}
+                                avatarUrl={match.playerAAvatarUrl}
+                                isRegistered={match.playerAIsRegistered}
+                                size="xs"
+                              />
+                              <span>
+                                {match.playerAName}{" "}
+                                {match.teamAName ? `(${match.teamAName})` : ""}
+                              </span>
                             </span>
                             <span className="chip chip-bye">Fecha Libre</span>
                           </div>
@@ -126,7 +137,22 @@ export const FixtureView: React.FC<FixtureViewProps> = ({
                           }`}
                         >
                           <div className="match-side home">
-                            <span className="player-name">{match.playerAName}</span>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                              <UserAvatar
+                                name={match.playerAName}
+                                avatarUrl={match.playerAAvatarUrl}
+                                isRegistered={match.playerAIsRegistered}
+                                size="xs"
+                                onClick={onInspectPlayer && match.playerAId ? () => onInspectPlayer(match.playerAId!) : undefined}
+                              />
+                              <span
+                                className={`player-name ${onInspectPlayer && match.playerAId ? "player-clickable-name" : ""}`}
+                                onClick={onInspectPlayer && match.playerAId ? () => onInspectPlayer(match.playerAId!) : undefined}
+                                title={onInspectPlayer && match.playerAId ? `Ver ficha de ${match.playerAName}` : undefined}
+                              >
+                                {match.playerAName}
+                              </span>
+                            </div>
                             <span className="team-name">{match.teamAName}</span>
                           </div>
 
@@ -143,7 +169,22 @@ export const FixtureView: React.FC<FixtureViewProps> = ({
                           </div>
 
                           <div className="match-side away">
-                            <span className="player-name">{match.playerBName}</span>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                              <UserAvatar
+                                name={match.playerBName}
+                                avatarUrl={match.playerBAvatarUrl}
+                                isRegistered={match.playerBIsRegistered}
+                                size="xs"
+                                onClick={onInspectPlayer && match.playerBId ? () => onInspectPlayer(match.playerBId!) : undefined}
+                              />
+                              <span
+                                className={`player-name ${onInspectPlayer && match.playerBId ? "player-clickable-name" : ""}`}
+                                onClick={onInspectPlayer && match.playerBId ? () => onInspectPlayer(match.playerBId!) : undefined}
+                                title={onInspectPlayer && match.playerBId ? `Ver ficha de ${match.playerBName}` : undefined}
+                              >
+                                {match.playerBName}
+                              </span>
+                            </div>
                             <span className="team-name">{match.teamBName}</span>
                           </div>
 

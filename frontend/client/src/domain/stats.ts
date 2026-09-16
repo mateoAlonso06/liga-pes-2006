@@ -33,6 +33,8 @@ export function calculateTopScorers(
         playerName: player ? player.name : "Desconocido",
         teamName,
         goals: 1,
+        avatarUrl: player?.avatarUrl ?? null,
+        isRegistered: player?.isRegistered ?? false,
       });
     }
   }
@@ -76,6 +78,8 @@ export function calculateRedCards(
         playerName: player ? player.name : "Desconocido",
         teamName,
         count: 1,
+        avatarUrl: player?.avatarUrl ?? null,
+        isRegistered: player?.isRegistered ?? false,
       });
     }
   }

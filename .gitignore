@@ -5,3 +5,7 @@ node_modules
 .DS_Store
 .codegraph/
 dist
+*.db
+*.db-shm
+*.db-wal
+backups/

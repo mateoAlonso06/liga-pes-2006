@@ -81,9 +81,13 @@ export function buildFixture(
           playerAId: byeId,
           playerAName: player ? player.name : "Participante",
           teamAName: player ? teamMap.get(player.teamId) || "Sin Equipo" : "",
+          playerAAvatarUrl: player?.avatarUrl ?? null,
+          playerAIsRegistered: player?.isRegistered ?? false,
           playerBId: null,
           playerBName: "",
           teamBName: "",
+          playerBAvatarUrl: null,
+          playerBIsRegistered: false,
           isBye: true,
           played: true,
           goalsA: null,
@@ -102,15 +106,19 @@ export function buildFixture(
             (m.playerAId === idB && m.playerBId === idA))
       );
 
-      if (playedMatch) {
+      if (playedMatch && playedMatch.played) {
         const isAHome = playedMatch.playerAId === idA;
         roundMatches.push({
           playerAId: idA,
           playerAName: playerA ? playerA.name : "Desconocido",
           teamAName: playerA ? teamMap.get(playerA.teamId) || "Sin Equipo" : "",
+          playerAAvatarUrl: playerA?.avatarUrl ?? null,
+          playerAIsRegistered: playerA?.isRegistered ?? false,
           playerBId: idB,
           playerBName: playerB ? playerB.name : "Desconocido",
           teamBName: playerB ? teamMap.get(playerB.teamId) || "Sin Equipo" : "",
+          playerBAvatarUrl: playerB?.avatarUrl ?? null,
+          playerBIsRegistered: playerB?.isRegistered ?? false,
           isBye: false,
           played: true,
           goalsA: isAHome ? playedMatch.goalsA : playedMatch.goalsB,
@@ -121,9 +129,13 @@ export function buildFixture(
           playerAId: idA,
           playerAName: playerA ? playerA.name : "Desconocido",
           teamAName: playerA ? teamMap.get(playerA.teamId) || "Sin Equipo" : "",
+          playerAAvatarUrl: playerA?.avatarUrl ?? null,
+          playerAIsRegistered: playerA?.isRegistered ?? false,
           playerBId: idB,
           playerBName: playerB ? playerB.name : "Desconocido",
           teamBName: playerB ? teamMap.get(playerB.teamId) || "Sin Equipo" : "",
+          playerBAvatarUrl: playerB?.avatarUrl ?? null,
+          playerBIsRegistered: playerB?.isRegistered ?? false,
           isBye: false,
           played: false,
           goalsA: null,

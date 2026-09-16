@@ -1,11 +1,13 @@
 import React from 'react';
 import type { StandingRow } from '../domain/types';
+import { UserAvatar } from './UserAvatar';
 
 interface StandingsTableProps {
   standings: StandingRow[];
+  onSelectPlayer?: (playerId: string) => void;
 }
 
-export const StandingsTable: React.FC<StandingsTableProps> = ({ standings }) => {
+export const StandingsTable: React.FC<StandingsTableProps> = ({ standings, onSelectPlayer }) => {
   if (standings.length === 0) {
     return <div className="empty-state">No hay participantes ni partidos registrados todavía.</div>;
   }
@@ -32,7 +34,24 @@ export const StandingsTable: React.FC<StandingsTableProps> = ({ standings }) => 
           {standings.map((row, index) => (
             <tr key={row.playerId}>
               <td className="col-number badge-position">{index + 1}</td>
-              <td className="player-name">{row.playerName}</td>
+              <td className="player-name">
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "10px" }}>
+                  <UserAvatar
+                    name={row.playerName}
+                    avatarUrl={row.avatarUrl}
+                    isRegistered={row.isRegistered}
+                    size="sm"
+                    onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
+                  />
+                  <span
+                    className={onSelectPlayer ? "player-clickable-name" : ""}
+                    onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
+                    title={onSelectPlayer ? `Ver ficha de ${row.playerName}` : undefined}
+                  >
+                    {row.playerName}
+                  </span>
+                </div>
+              </td>
               <td className="team-name">{row.teamName}</td>
               <td className="col-stat">{row.played}</td>
               <td className="col-stat">{row.won}</td>

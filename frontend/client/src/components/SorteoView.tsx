@@ -6,8 +6,9 @@ import {
   assignTeams,
   type SorteoAssignment,
 } from "../domain/sorteo";
-import { executeResetAndSorteo } from "../services/api";
+import { executeResetAndSorteo, executeTournamentSorteo } from "../services/api";
 import { useAuth } from "../context/useAuth";
+import { useTournament } from "../context/useTournament";
 
 interface SorteoViewProps {
   currentPlayers: Player[];
@@ -24,7 +25,9 @@ export function SorteoView({
   onChangeFormat,
   onSorteoComplete,
 }: SorteoViewProps) {
-  const { token } = useAuth();
+  const { token, isAdmin } = useAuth();
+  const { activeTournament, canManageActiveTournament, refreshTournaments } = useTournament();
+
 
   const initialPersonas =
     localStorage.getItem("pes_pool_personas") ||
@@ -43,6 +46,11 @@ export function SorteoView({
 
   const handleOpenConfirm = () => {
     setError(null);
+    const canRun = isAdmin || canManageActiveTournament;
+    if (!canRun) {
+      setError("Acceso restringido: Solo el organizador o un administrador pueden ejecutar el sorteo.");
+      return;
+    }
     const people = parseSorteoList(personasText);
     const teams = parseSorteoList(equiposText);
     const validation = validateSorteoInput(people, teams);
@@ -56,7 +64,11 @@ export function SorteoView({
   };
 
   const handleExecuteSorteo = async () => {
-    if (!token) return;
+    const canRun = isAdmin || canManageActiveTournament;
+    if (!token || !canRun) {
+      setError("Se requieren credenciales de organizador o administrador.");
+      return;
+    }
     setShowConfirmModal(false);
     setIsSubmitting(true);
     setError(null);
@@ -67,7 +79,12 @@ export function SorteoView({
     try {
       const assignments = assignTeams(people, teams);
 
-      await executeResetAndSorteo(token, assignments);
+      if (activeTournament && activeTournament.status === "borrador") {
+        await executeTournamentSorteo(token, activeTournament.id, assignments);
+        await refreshTournaments();
+      } else {
+        await executeResetAndSorteo(token, assignments);
+      }
 
       localStorage.setItem("pes_pool_personas", personasText);
       localStorage.setItem("pes_pool_equipos", equiposText);
@@ -82,6 +99,7 @@ export function SorteoView({
       setIsSubmitting(false);
     }
   };
+
 
   return (
     <div className="sorteo-container">
@@ -169,14 +187,17 @@ export function SorteoView({
       {showConfirmModal && (
         <div className="modal-overlay" role="dialog" aria-modal="true">
           <div className="modal-box">
-            <button
-              type="button"
-              className="modal-close"
-              onClick={() => setShowConfirmModal(false)}
-            >
-              ✕
-            </button>
-            <h2>Confirmar Sorteo</h2>
+            <div className="modal-header-row">
+              <h2>Confirmar Sorteo</h2>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setShowConfirmModal(false)}
+                aria-label="Cerrar ventana"
+              >
+                ✕
+              </button>
+            </div>
             <p className="modal-sub" style={{ lineHeight: "1.5" }}>
               Al realizar el sorteo se configurará el nuevo plantel y se <strong>REINICIARÁN</strong> todas las estadísticas: Posiciones, Goleadores y Tarjetas Rojas quedarán en 0, iniciando la Semana 1. ¿Deseas continuar?
             </p>

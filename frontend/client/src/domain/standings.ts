@@ -18,6 +18,8 @@ export function calculateStandings(
       playerId: player.id,
       playerName: player.name,
       teamName: teamMap.get(player.teamId) || 'Sin Equipo',
+      avatarUrl: player.avatarUrl ?? null,
+      isRegistered: player.isRegistered ?? false,
       played: 0,
       won: 0,
       drawn: 0,

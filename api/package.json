@@ -6,14 +6,21 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "db:init": "node src/seed.js"
+    "db:init": "node src/seed.js",
+    "db:migrate": "node src/migrate.js",
+    "db:backup-prod": "node src/backup-prod.js",
+    "db:restore-backup": "node src/restore-backup.js",
+    "test": "node --test --test-concurrency=1 test/**/*.test.js"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
     "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.11.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.4.0"
   }
 }

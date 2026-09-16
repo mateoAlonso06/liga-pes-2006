@@ -4,23 +4,43 @@ import {
   fetchPropuestas,
   aprobarPropuesta,
   rechazarPropuesta,
+  fetchTorneoSolicitudes,
+  aprobarTorneoSolicitud,
+  rechazarTorneoSolicitud,
+  quitarParticipanteTorneo,
+  bloquearUsuarioTorneo,
+  desbloquearUsuarioTorneo,
+  fetchTorneoBloqueados,
+  fetchTorneo,
   type ProposalDto,
+  type TorneoSolicitudDto,
+  type TorneoBloqueadoDto,
+  type TorneoDetailDto,
 } from "../services/api";
 import { useAuth } from "../context/useAuth";
+import { useTournament } from "../context/useTournament";
+import { UserAvatar } from "./UserAvatar";
 
 interface AdminModerationPanelProps {
   players: Player[];
   teams: Team[];
+  tournamentId?: number;
   onMatchApproved?: () => void;
 }
 
 export function AdminModerationPanel({
   players,
   teams,
+  tournamentId,
   onMatchApproved,
 }: AdminModerationPanelProps) {
   const { token, logout } = useAuth();
+  const { activeTournament, refreshTournaments } = useTournament();
+  const [activeTab, setActiveTab] = useState<"propuestas" | "solicitudes" | "participantes">("propuestas");
   const [propuestas, setPropuestas] = useState<ProposalDto[]>([]);
+  const [solicitudes, setSolicitudes] = useState<TorneoSolicitudDto[]>([]);
+  const [bloqueados, setBloqueados] = useState<TorneoBloqueadoDto[]>([]);
+  const [participantes, setParticipantes] = useState<TorneoDetailDto["participantes"]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<number | null>(null);
@@ -32,14 +52,27 @@ export function AdminModerationPanel({
   const playerMap = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
   const teamMap = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
 
-  const loadPropuestas = useCallback(async () => {
-    if (!token) return;
+  const loadData = useCallback(async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     setError(null);
     try {
-      const list = await fetchPropuestas(token, "pendiente");
-      setPropuestas(list);
+      const [propsList, solsList, blockedList, detail] = await Promise.all([
+        fetchPropuestas(token, "pendiente", tournamentId),
+        tournamentId ? fetchTorneoSolicitudes(token, tournamentId).catch(() => [] as TorneoSolicitudDto[]) : Promise.resolve([] as TorneoSolicitudDto[]),
+        tournamentId ? fetchTorneoBloqueados(token, tournamentId).catch(() => [] as TorneoBloqueadoDto[]) : Promise.resolve([] as TorneoBloqueadoDto[]),
+        tournamentId ? fetchTorneo(tournamentId).catch(() => null) : Promise.resolve(null),
+      ]);
+      setPropuestas(propsList);
+      setSolicitudes(solsList.filter((s: TorneoSolicitudDto) => s.estado === "pendiente"));
+      setBloqueados(blockedList);
+      if (detail) {
+        setParticipantes(detail.participantes);
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Error al cargar solicitudes";
+      const message = err instanceof Error ? err.message : "Error al cargar datos de moderación";
       if (message.includes("401") || message.toLowerCase().includes("expirada")) {
         logout();
       } else {
@@ -48,48 +81,15 @@ export function AdminModerationPanel({
     } finally {
       setLoading(false);
     }
-  }, [token, logout]);
+  }, [token, logout, tournamentId]);
 
   useEffect(() => {
-    let ignore = false;
-
-    async function execute() {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const list = await fetchPropuestas(token, "pendiente");
-        if (!ignore) {
-          setPropuestas(list);
-          setError(null);
-        }
-      } catch (err) {
-        if (!ignore) {
-          const message = err instanceof Error ? err.message : "Error al cargar solicitudes";
-          if (message.includes("401") || message.toLowerCase().includes("expirada")) {
-            logout();
-          } else {
-            setError(message);
-          }
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void execute();
-
-    return () => {
-      ignore = true;
-    };
-  }, [token, logout]);
+    void loadData();
+  }, [loadData]);
 
   const handleManualRefresh = async () => {
     setLoading(true);
-    await loadPropuestas();
+    await loadData();
   };
 
   const handleAprobar = async (propuesta: ProposalDto) => {
@@ -140,12 +140,163 @@ export function AdminModerationPanel({
     }
   };
 
+  const handleAprobarSolicitud = async (sol: TorneoSolicitudDto, id_equipo?: number) => {
+    if (!token || !tournamentId) return;
+    setActionId(sol.id_solicitud);
+    setActionType("aprobar");
+    setFeedback(null);
+
+    try {
+      await aprobarTorneoSolicitud(token, tournamentId, sol.id_solicitud, id_equipo);
+      setSolicitudes((prev) => prev.filter((s) => s.id_solicitud !== sol.id_solicitud));
+      setFeedback({
+        type: "success",
+        text: `¡Solicitud de @${sol.username} aprobada! Se incorporó al torneo exitosamente.`,
+      });
+      onMatchApproved?.();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Error al aprobar la solicitud";
+      setFeedback({ type: "error", text: message });
+    } finally {
+      setActionId(null);
+      setActionType(null);
+    }
+  };
+
+  const handleRechazarSolicitud = async (sol: TorneoSolicitudDto) => {
+    if (!token || !tournamentId) return;
+    if (!window.confirm(`¿Estás seguro de rechazar la solicitud de @${sol.username}?`)) return;
+
+    setActionId(sol.id_solicitud);
+    setActionType("rechazar");
+    setFeedback(null);
+
+    try {
+      await rechazarTorneoSolicitud(token, tournamentId, sol.id_solicitud);
+      setSolicitudes((prev) => prev.filter((s) => s.id_solicitud !== sol.id_solicitud));
+      setFeedback({
+        type: "success",
+        text: `Solicitud de @${sol.username} rechazada.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Error al rechazar la solicitud";
+      setFeedback({ type: "error", text: message });
+    } finally {
+      setActionId(null);
+      setActionType(null);
+    }
+  };
+
+  const handleQuitarParticipante = async (p: TorneoDetailDto["participantes"][0]) => {
+    if (!token || !tournamentId) return;
+    if (!window.confirm(`¿Estás seguro de expulsar a ${p.persona_nombre} del torneo?`)) return;
+
+    setActionId(p.id_persona);
+    setActionType("rechazar");
+    try {
+      await quitarParticipanteTorneo(token, tournamentId, p.id_persona);
+      setParticipantes((prev) => prev.filter((item) => item.id_persona !== p.id_persona));
+      setFeedback({
+        type: "success",
+        text: `Participante ${p.persona_nombre} expulsado del torneo.`,
+      });
+      await refreshTournaments();
+      onMatchApproved?.();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Error al quitar participante" });
+    } finally {
+      setActionId(null);
+      setActionType(null);
+    }
+  };
+
+  const handleBloquearUsuario = async (userId: number, username: string) => {
+    if (!token || !tournamentId) return;
+    const motivo = window.prompt(`Ingresá el motivo del bloqueo para @${username} (opcional):`);
+    if (motivo === null) return;
+
+    setActionId(userId);
+    setActionType("rechazar");
+    try {
+      await bloquearUsuarioTorneo(token, tournamentId, userId, motivo || undefined);
+      setFeedback({
+        type: "success",
+        text: `Usuario @${username} bloqueado del torneo.`,
+      });
+      await loadData();
+      await refreshTournaments();
+      onMatchApproved?.();
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Error al bloquear usuario" });
+    } finally {
+      setActionId(null);
+      setActionType(null);
+    }
+  };
+
+  const handleDesbloquearUsuario = async (userId: number, username: string) => {
+    if (!token || !tournamentId) return;
+    setActionId(userId);
+    setActionType("aprobar");
+    try {
+      await desbloquearUsuarioTorneo(token, tournamentId, userId);
+      setBloqueados((prev) => prev.filter((b) => b.id_usuario !== userId));
+      setFeedback({
+        type: "success",
+        text: `Usuario @${username} desbloqueado exitosamente.`,
+      });
+    } catch (err) {
+      setFeedback({ type: "error", text: err instanceof Error ? err.message : "Error al desbloquear usuario" });
+    } finally {
+      setActionId(null);
+      setActionType(null);
+    }
+  };
+
   return (
     <div className="moderation-panel">
+      {tournamentId && (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${activeTab === "propuestas" ? "btn-gold" : "btn-secondary"}`}
+            onClick={() => setActiveTab("propuestas")}
+          >
+            📋 Propuestas ({propuestas.length})
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${activeTab === "solicitudes" ? "btn-gold" : "btn-secondary"}`}
+            onClick={() => setActiveTab("solicitudes")}
+          >
+            📨 Solicitudes ({solicitudes.length})
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${activeTab === "participantes" ? "btn-gold" : "btn-secondary"}`}
+            onClick={() => setActiveTab("participantes")}
+          >
+            👥 Participantes y Bloqueos ({participantes.length})
+          </button>
+        </div>
+      )}
+
       <div className="panel-toolbar">
         <div className="toolbar-info">
-          <h3>Bandeja de Propuestas Comunitarias</h3>
-          <span className="count-badge">{propuestas.length} pendientes</span>
+          <h3>
+            {activeTab === "propuestas"
+              ? "Bandeja de Propuestas Comunitarias"
+              : activeTab === "solicitudes"
+              ? "Solicitudes de Participación"
+              : "Gestión de Participantes y Lista de Bloqueados"}
+          </h3>
+          <span className="count-badge">
+            {activeTab === "propuestas"
+              ? `${propuestas.length} pendientes`
+              : activeTab === "solicitudes"
+              ? `${solicitudes.length} pendientes`
+              : `${participantes.length} activos / ${bloqueados.length} bloqueados`}
+          </span>
         </div>
         <button
           type="button"
@@ -182,7 +333,223 @@ export function AdminModerationPanel({
         </div>
       )}
 
-      {loading && propuestas.length === 0 ? (
+      {activeTab === "participantes" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* Participantes Activos */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <h4 style={{ margin: 0 }}>Participantes Inscritos ({participantes.length})</h4>
+              {activeTournament?.status !== "borrador" && (
+                <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+                  (El torneo ya inició: la lista no puede modificarse)
+                </span>
+              )}
+            </div>
+
+            {participantes.length === 0 ? (
+              <div className="empty-state" style={{ padding: "20px" }}>
+                <p>No hay participantes inscritos todavía.</p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "10px" }}>
+                {participantes.map((p) => {
+                  const isProcessing = actionId === p.id_persona;
+                  return (
+                    <div
+                      key={p.id_persona}
+                      className="proposal-card"
+                      style={{ padding: "12px 14px", margin: 0, display: "flex", flexDirection: "column", gap: "8px" }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <UserAvatar
+                            name={p.persona_nombre}
+                            avatarUrl={p.usuario_avatar_url}
+                            isRegistered={Boolean(p.id_usuario)}
+                            size="sm"
+                          />
+                          <div>
+                            <strong style={{ fontSize: "0.95rem" }}>{p.persona_nombre}</strong>
+                            {p.usuario_username && (
+                              <span style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginLeft: "6px" }}>
+                                (@{p.usuario_username})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="team-pill" style={{ fontSize: "0.75rem" }}>
+                          {p.equipo_nombre}
+                        </span>
+                      </div>
+
+                      {activeTournament?.status === "borrador" && (
+                        <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                            onClick={() => void handleQuitarParticipante(p)}
+                            disabled={isProcessing}
+                            title="Quitar participante del torneo"
+                          >
+                            🚫 Expulsar
+                          </button>
+                          {p.id_usuario && (
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                              onClick={() => void handleBloquearUsuario(p.id_usuario!, p.usuario_username || p.persona_nombre)}
+                              disabled={isProcessing}
+                              title="Bloquear usuario e impedir que vuelva a entrar"
+                            >
+                              ⛔ Bloquear
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Usuarios Bloqueados */}
+          <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "18px" }}>
+            <h4 style={{ margin: "0 0 12px 0", color: "#fca5a5" }}>
+              ⛔ Usuarios Bloqueados ({bloqueados.length})
+            </h4>
+
+            {bloqueados.length === 0 ? (
+              <p style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>
+                No hay usuarios bloqueados en este torneo.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {bloqueados.map((b) => {
+                  const isProcessing = actionId === b.id_usuario;
+                  return (
+                    <div
+                      key={b.id_usuario}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        background: "rgba(239, 68, 68, 0.08)",
+                        border: "1px solid rgba(239, 68, 68, 0.25)",
+                        borderRadius: "6px",
+                        padding: "10px 14px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <UserAvatar
+                          name={b.username}
+                          avatarUrl={b.avatar_url}
+                          isRegistered={true}
+                          size="sm"
+                        />
+                        <div>
+                          <strong>@{b.username}</strong>
+                          {b.motivo && (
+                            <span style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginLeft: "10px" }}>
+                              Motivo: {b.motivo}
+                            </span>
+                          )}
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-dim)", display: "block", marginTop: "2px" }}>
+                            Bloqueado el: {b.bloqueado_en ? b.bloqueado_en.slice(0, 10) : "reciente"}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-gold btn-sm"
+                        style={{ fontSize: "0.8rem" }}
+                        onClick={() => void handleDesbloquearUsuario(b.id_usuario, b.username)}
+                        disabled={isProcessing}
+                      >
+                        ✓ Desbloquear
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : activeTab === "solicitudes" ? (
+        loading && solicitudes.length === 0 ? (
+          <div className="state-container">
+            <div className="spinner" />
+            <p>Cargando solicitudes de ingreso...</p>
+          </div>
+        ) : solicitudes.length === 0 ? (
+          <div className="empty-state">
+            <div style={{ fontSize: "2.5rem", marginBottom: "10px" }}>👥</div>
+            <h3>No hay solicitudes de ingreso pendientes</h3>
+            <p>Compartí el código de invitación del torneo para que nuevos jugadores se unan.</p>
+          </div>
+        ) : (
+          <div className="proposals-list">
+            {solicitudes.map((s) => {
+              const isProcessingThis = actionId === s.id_solicitud;
+              return (
+                <div key={s.id_solicitud} className="proposal-card">
+                  <div className="proposal-card-header">
+                    <div className="proposal-matchup" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <UserAvatar
+                        name={s.username}
+                        avatarUrl={s.avatar_url}
+                        isRegistered={true}
+                        size="sm"
+                      />
+                      <span className="player-title">
+                        @{s.username}
+                      </span>
+                    </div>
+                    {s.equipo_nombre && (
+                      <span className="team-pill" style={{ fontSize: "0.85rem" }}>
+                        Preferencia: <strong>{s.equipo_nombre}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  {s.mensaje && (
+                    <div style={{ margin: "10px 0", fontStyle: "italic", color: "var(--text-dim)", fontSize: "0.85rem" }}>
+                      "{s.mensaje}"
+                    </div>
+                  )}
+
+                  <div className="proposal-meta-row">
+                    <span className="meta-item meta-dim">
+                      🕒 Solicitado: {s.creado_en ? s.creado_en.replace("T", " ").slice(0, 16) : "reciente"}
+                    </span>
+                  </div>
+
+                  <div className="proposal-actions-row">
+                    <button
+                      type="button"
+                      className="btn btn-gold btn-sm"
+                      onClick={() => void handleAprobarSolicitud(s, s.id_equipo ?? undefined)}
+                      disabled={isProcessingThis}
+                    >
+                      {isProcessingThis && actionType === "aprobar" ? "Incorporando..." : "✓ Aceptar e Incorporar"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={() => void handleRechazarSolicitud(s)}
+                      disabled={isProcessingThis}
+                    >
+                      {isProcessingThis && actionType === "rechazar" ? "Rechazando..." : "✕ Rechazar"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : loading && propuestas.length === 0 ? (
         <div className="state-container">
           <div className="spinner" />
           <p>Cargando propuestas pendientes...</p>
@@ -208,14 +575,30 @@ export function AdminModerationPanel({
             return (
               <div key={p.id_propuesta} className="proposal-card">
                 <div className="proposal-card-header">
-                  <div className="proposal-matchup">
-                    <span className="player-title">
-                      {nameA} <span className="team-pill">({teamA})</span>
-                    </span>
+                  <div className="proposal-matchup" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                      <UserAvatar
+                        name={nameA}
+                        avatarUrl={playerA?.avatarUrl}
+                        isRegistered={playerA?.isRegistered}
+                        size="xs"
+                      />
+                      <span className="player-title">
+                        {nameA} <span className="team-pill">({teamA})</span>
+                      </span>
+                    </div>
                     <span className="vs-tag">vs</span>
-                    <span className="player-title">
-                      {nameB} <span className="team-pill">({teamB})</span>
-                    </span>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                      <UserAvatar
+                        name={nameB}
+                        avatarUrl={playerB?.avatarUrl}
+                        isRegistered={playerB?.isRegistered}
+                        size="xs"
+                      />
+                      <span className="player-title">
+                        {nameB} <span className="team-pill">({teamB})</span>
+                      </span>
+                    </div>
                   </div>
 
                   <div className="proposal-score-box">

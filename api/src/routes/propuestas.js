@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import db from '../db.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAuth, canManageTournament } from '../middleware/auth.js';
+import { settleMatchProde } from '../domain/prode.js';
 
 const router = Router();
 
 function toPropuestaResponse(row) {
   return {
     id_propuesta: row.id_propuesta,
+    id_torneo: row.id_torneo ?? null,
     id_local: row.id_local,
     id_visitante: row.id_visitante,
     goles_local: row.goles_local,
@@ -31,6 +33,7 @@ router.post('/', async (req, res, next) => {
       goleadores,
       rojas,
       nombre_solicitante,
+      id_torneo,
     } = req.body;
 
     if (!id_local || !id_visitante) {
@@ -48,8 +51,8 @@ router.post('/', async (req, res, next) => {
 
     const result = await db.execute({
       sql: `INSERT INTO propuesta_partido
-              (id_local, id_visitante, goles_local, goles_visitante, numero_fecha, goleadores_json, rojas_json, nombre_solicitante, estado)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')`,
+              (id_local, id_visitante, goles_local, goles_visitante, numero_fecha, goleadores_json, rojas_json, nombre_solicitante, estado, id_torneo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)`,
       args: [
         id_local,
         id_visitante,
@@ -59,6 +62,7 @@ router.post('/', async (req, res, next) => {
         JSON.stringify(goleadoresArr),
         JSON.stringify(rojasArr),
         nombre_solicitante ?? null,
+        id_torneo ?? null,
       ],
     });
 
@@ -72,6 +76,7 @@ router.post('/', async (req, res, next) => {
       goleadores: goleadoresArr,
       rojas: rojasArr,
       nombre_solicitante: nombre_solicitante ?? null,
+      id_torneo: id_torneo ?? null,
       estado: 'pendiente',
     });
   } catch (err) {
@@ -79,22 +84,46 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.get('/', requireAdmin, async (req, res, next) => {
+router.get('/', requireAuth, async (req, res, next) => {
   try {
-    const { estado } = req.query;
-    const result = estado
-      ? await db.execute({
-          sql: 'SELECT * FROM propuesta_partido WHERE estado = ?',
-          args: [estado],
-        })
-      : await db.execute('SELECT * FROM propuesta_partido');
+    const { estado, id_torneo } = req.query;
+    let sql = 'SELECT * FROM propuesta_partido';
+    const conditions = [];
+    const args = [];
+
+    if (req.user.role !== 'admin') {
+      if (id_torneo) {
+        const allowed = await canManageTournament(req.user, id_torneo, db);
+        if (!allowed) {
+          return res.status(403).json({ error: 'No tenés permisos para ver propuestas de este torneo' });
+        }
+      } else {
+        conditions.push('id_torneo IN (SELECT id_torneo FROM torneo WHERE id_organizador = ?)');
+        args.push(req.user.id);
+      }
+    }
+
+    if (estado) {
+      conditions.push('estado = ?');
+      args.push(estado);
+    }
+    if (id_torneo) {
+      conditions.push('id_torneo = ?');
+      args.push(id_torneo);
+    }
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    const result = await db.execute({ sql, args });
     res.json(result.rows.map(toPropuestaResponse));
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/:id/aprobar', requireAdmin, async (req, res, next) => {
+router.post('/:id/aprobar', requireAuth, async (req, res, next) => {
   try {
     const propuestaResult = await db.execute({
       sql: 'SELECT * FROM propuesta_partido WHERE id_propuesta = ?',
@@ -108,17 +137,31 @@ router.post('/:id/aprobar', requireAdmin, async (req, res, next) => {
       return res.status(409).json({ error: 'Esta propuesta ya fue procesada' });
     }
 
+    const allowed = await canManageTournament(req.user, propuesta.id_torneo, db);
+    if (!allowed) {
+      return res.status(403).json({ error: 'No tenés permisos para moderar propuestas de este torneo' });
+    }
+
+    let conflictoSql = `SELECT * FROM partido
+          WHERE (estado IS NULL OR estado != 'pendiente')
+            AND numero_fecha = ?
+            AND ((id_local = ? AND id_visitante = ?) OR (id_local = ? AND id_visitante = ?))`;
+    const conflictoArgs = [
+      propuesta.numero_fecha,
+      propuesta.id_local,
+      propuesta.id_visitante,
+      propuesta.id_visitante,
+      propuesta.id_local,
+    ];
+
+    if (propuesta.id_torneo) {
+      conflictoSql += ' AND id_torneo = ?';
+      conflictoArgs.push(propuesta.id_torneo);
+    }
+
     const conflicto = await db.execute({
-      sql: `SELECT * FROM partido
-            WHERE numero_fecha = ?
-              AND ((id_local = ? AND id_visitante = ?) OR (id_local = ? AND id_visitante = ?))`,
-      args: [
-        propuesta.numero_fecha,
-        propuesta.id_local,
-        propuesta.id_visitante,
-        propuesta.id_visitante,
-        propuesta.id_local,
-      ],
+      sql: conflictoSql,
+      args: conflictoArgs,
     });
     if (conflicto.rows.length > 0) {
       return res
@@ -126,19 +169,60 @@ router.post('/:id/aprobar', requireAdmin, async (req, res, next) => {
         .json({ error: 'Ya existe un resultado cargado para esa fecha entre estos rivales' });
     }
 
-    const partidoResult = await db.execute({
-      sql: `INSERT INTO partido (goles_local, goles_visitante, numero_fecha, estado, id_local, id_visitante)
-            VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [
-        propuesta.goles_local,
-        propuesta.goles_visitante,
-        propuesta.numero_fecha,
-        null,
-        propuesta.id_local,
-        propuesta.id_visitante,
-      ],
-    });
-    const id_partido = Number(partidoResult.lastInsertRowid);
+    // Check if there is an existing pending match for this pairing
+    let pendingSql = `SELECT id_partido FROM partido
+          WHERE estado = 'pendiente'
+            AND ((id_local = ? AND id_visitante = ?) OR (id_local = ? AND id_visitante = ?))`;
+    const pendingArgs = [
+      propuesta.id_local,
+      propuesta.id_visitante,
+      propuesta.id_visitante,
+      propuesta.id_local,
+    ];
+    if (propuesta.numero_fecha) {
+      pendingSql += ' AND numero_fecha = ?';
+      pendingArgs.push(propuesta.numero_fecha);
+    }
+    if (propuesta.id_torneo) {
+      pendingSql += ' AND id_torneo = ?';
+      pendingArgs.push(propuesta.id_torneo);
+    }
+
+    const pendingRes = await db.execute({ sql: pendingSql, args: pendingArgs });
+    let id_partido;
+
+    if (pendingRes.rows.length > 0) {
+      id_partido = Number(pendingRes.rows[0].id_partido);
+      await db.execute({
+        sql: `UPDATE partido
+              SET goles_local = ?, goles_visitante = ?, estado = 'jugado', id_local = ?, id_visitante = ?
+              WHERE id_partido = ?`,
+        args: [
+          propuesta.goles_local,
+          propuesta.goles_visitante,
+          propuesta.id_local,
+          propuesta.id_visitante,
+          id_partido,
+        ],
+      });
+    } else {
+      const partidoResult = await db.execute({
+        sql: `INSERT INTO partido (goles_local, goles_visitante, numero_fecha, estado, id_local, id_visitante, id_torneo)
+              VALUES (?, ?, ?, 'jugado', ?, ?, ?)`,
+        args: [
+          propuesta.goles_local,
+          propuesta.goles_visitante,
+          propuesta.numero_fecha,
+          propuesta.id_local,
+          propuesta.id_visitante,
+          propuesta.id_torneo ?? null,
+        ],
+      });
+      id_partido = Number(partidoResult.lastInsertRowid);
+    }
+
+    // Settle prode predictions
+    await settleMatchProde(db, id_partido, propuesta.goles_local, propuesta.goles_visitante);
 
     const goleadores = JSON.parse(propuesta.goleadores_json);
     const rojas = JSON.parse(propuesta.rojas_json);
@@ -173,36 +257,60 @@ router.post('/:id/aprobar', requireAdmin, async (req, res, next) => {
       estado: null,
       id_local: propuesta.id_local,
       id_visitante: propuesta.id_visitante,
+      id_torneo: propuesta.id_torneo ?? null,
     });
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/:id/rechazar', requireAdmin, async (req, res, next) => {
+
+router.post('/:id/rechazar', requireAuth, async (req, res, next) => {
   try {
-    const result = await db.execute({
+    const propuestaResult = await db.execute({
+      sql: 'SELECT * FROM propuesta_partido WHERE id_propuesta = ?',
+      args: [req.params.id],
+    });
+    if (propuestaResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Propuesta not found' });
+    }
+    const propuesta = propuestaResult.rows[0];
+
+    const allowed = await canManageTournament(req.user, propuesta.id_torneo, db);
+    if (!allowed) {
+      return res.status(403).json({ error: 'No tenés permisos para moderar propuestas de este torneo' });
+    }
+
+    await db.execute({
       sql: `UPDATE propuesta_partido SET estado = 'rechazado' WHERE id_propuesta = ?`,
       args: [req.params.id],
     });
-    if (result.rowsAffected === 0) {
-      return res.status(404).json({ error: 'Propuesta not found' });
-    }
     res.status(204).end();
   } catch (err) {
     next(err);
   }
 });
 
-router.delete('/:id', requireAdmin, async (req, res, next) => {
+router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    const result = await db.execute({
+    const propuestaResult = await db.execute({
+      sql: 'SELECT * FROM propuesta_partido WHERE id_propuesta = ?',
+      args: [req.params.id],
+    });
+    if (propuestaResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Propuesta not found' });
+    }
+    const propuesta = propuestaResult.rows[0];
+
+    const allowed = await canManageTournament(req.user, propuesta.id_torneo, db);
+    if (!allowed) {
+      return res.status(403).json({ error: 'No tenés permisos para eliminar propuestas de este torneo' });
+    }
+
+    await db.execute({
       sql: 'DELETE FROM propuesta_partido WHERE id_propuesta = ?',
       args: [req.params.id],
     });
-    if (result.rowsAffected === 0) {
-      return res.status(404).json({ error: 'Propuesta not found' });
-    }
     res.status(204).end();
   } catch (err) {
     next(err);

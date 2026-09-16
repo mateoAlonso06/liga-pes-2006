@@ -10,12 +10,14 @@ import {
   mapProposalInputToPayload,
 } from "../domain/proposals";
 import { submitProposal, type ProposalDto } from "../services/api";
+import { UserAvatar } from "./UserAvatar";
 
 interface ProposalFormProps {
   players: Player[];
   teams: Team[];
   matches: Match[];
   format?: "ida" | "ida_vuelta";
+  tournamentId?: number;
   onSuccess?: () => void;
 }
 
@@ -24,6 +26,7 @@ export function ProposalForm({
   teams,
   matches,
   format = "ida",
+  tournamentId,
   onSuccess,
 }: ProposalFormProps) {
   const teamMap = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
@@ -183,7 +186,10 @@ export function ProposalForm({
     setIsSubmitting(true);
 
     try {
-      const payload = mapProposalInputToPayload(stateToSubmit);
+      const payload = {
+        ...mapProposalInputToPayload(stateToSubmit),
+        id_torneo: tournamentId ?? null,
+      };
       const result = await submitProposal(payload);
       setSubmittedProposal(result);
     } catch (err) {
@@ -334,8 +340,16 @@ export function ProposalForm({
         {/* Participantes */}
         <div className="form-grid-2">
           <div className="form-field">
-            <label htmlFor="playerA">
-              Participante 1 (Local) <span className="required-star">*</span>
+            <label htmlFor="playerA" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {playerMap.get(formState.playerAId) && (
+                <UserAvatar
+                  name={playerMap.get(formState.playerAId)!.name}
+                  avatarUrl={playerMap.get(formState.playerAId)!.avatarUrl}
+                  isRegistered={playerMap.get(formState.playerAId)!.isRegistered}
+                  size="xs"
+                />
+              )}
+              <span>Participante 1 (Local) <span className="required-star">*</span></span>
             </label>
             <select
               id="playerA"
@@ -353,8 +367,16 @@ export function ProposalForm({
           </div>
 
           <div className="form-field">
-            <label htmlFor="playerB">
-              Participante 2 (Visitante) <span className="required-star">*</span>
+            <label htmlFor="playerB" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {playerMap.get(formState.playerBId) && (
+                <UserAvatar
+                  name={playerMap.get(formState.playerBId)!.name}
+                  avatarUrl={playerMap.get(formState.playerBId)!.avatarUrl}
+                  isRegistered={playerMap.get(formState.playerBId)!.isRegistered}
+                  size="xs"
+                />
+              )}
+              <span>Participante 2 (Visitante) <span className="required-star">*</span></span>
             </label>
             <select
               id="playerB"

@@ -1,11 +1,13 @@
 import React from "react";
 import type { ScorerRow } from "../domain/types";
+import { UserAvatar } from "./UserAvatar";
 
 interface TopScorersTableProps {
   scorers: ScorerRow[];
+  onSelectPlayer?: (playerId: string) => void;
 }
 
-export const TopScorersTable: React.FC<TopScorersTableProps> = ({ scorers }) => {
+export const TopScorersTable: React.FC<TopScorersTableProps> = ({ scorers, onSelectPlayer }) => {
   if (scorers.length === 0) {
     return <div className="empty-state">No hay goles registrados todavía en el torneo.</div>;
   }
@@ -27,7 +29,24 @@ export const TopScorersTable: React.FC<TopScorersTableProps> = ({ scorers }) => 
             <tr key={`${row.virtualPlayer}-${row.playerId}`}>
               <td className="col-number badge-position">{index + 1}</td>
               <td className="player-name">{row.virtualPlayer}</td>
-              <td>{row.playerName}</td>
+              <td>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                  <UserAvatar
+                    name={row.playerName}
+                    avatarUrl={row.avatarUrl}
+                    isRegistered={row.isRegistered}
+                    size="xs"
+                    onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
+                  />
+                  <span
+                    className={onSelectPlayer ? "player-clickable-name" : ""}
+                    onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
+                    title={onSelectPlayer ? `Ver ficha de ${row.playerName}` : undefined}
+                  >
+                    {row.playerName}
+                  </span>
+                </div>
+              </td>
               <td className="team-name">{row.teamName}</td>
               <td className="col-pts"><strong>{row.goals}</strong></td>
             </tr>
