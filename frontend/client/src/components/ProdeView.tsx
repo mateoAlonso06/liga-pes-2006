@@ -75,9 +75,23 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
     loadProdeData();
   }, [activeTournament?.id, token]);
 
+  // Round filter state: "auto" selects active round with pending matches, or specific round key, or "all"
+  const [selectedRoundKey, setSelectedRoundKey] = useState<string>("auto");
+  const [filterPendingOnly, setFilterPendingOnly] = useState<boolean>(false);
+
+  useEffect(() => {
+    setSelectedRoundKey("auto");
+  }, [activeTournament?.id]);
+
   // Group matches by round / fecha or stage
   const groupedMatches = useMemo(() => {
-    const groups: { title: string; items: ProdeMatchItem[] }[] = [];
+    const groups: {
+      key: string;
+      title: string;
+      items: ProdeMatchItem[];
+      pendingCount: number;
+      playedCount: number;
+    }[] = [];
     const map = new Map<string, ProdeMatchItem[]>();
 
     for (const m of matches) {
@@ -89,10 +103,53 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
     }
 
     for (const [title, items] of map.entries()) {
-      groups.push({ title, items });
+      const pendingCount = items.filter((m) => !m.isPlayed).length;
+      const playedCount = items.filter((m) => m.isPlayed).length;
+      groups.push({ key: title, title, items, pendingCount, playedCount });
     }
     return groups;
   }, [matches]);
+
+  const activeRoundKey = useMemo(() => {
+    if (groupedMatches.length === 0) return null;
+    const firstPending = groupedMatches.find((g) => g.pendingCount > 0);
+    if (firstPending) return firstPending.key;
+    return groupedMatches[groupedMatches.length - 1].key;
+  }, [groupedMatches]);
+
+  const effectiveRoundKey = selectedRoundKey === "auto" ? (activeRoundKey ?? "all") : selectedRoundKey;
+
+  const currentRoundIndex = useMemo(() => {
+    return groupedMatches.findIndex((g) => g.key === effectiveRoundKey);
+  }, [groupedMatches, effectiveRoundKey]);
+
+  const handlePrevRound = () => {
+    if (currentRoundIndex > 0) {
+      setSelectedRoundKey(groupedMatches[currentRoundIndex - 1].key);
+    }
+  };
+
+  const handleNextRound = () => {
+    if (currentRoundIndex >= 0 && currentRoundIndex < groupedMatches.length - 1) {
+      setSelectedRoundKey(groupedMatches[currentRoundIndex + 1].key);
+    }
+  };
+
+  const displayedGroups = useMemo(() => {
+    let list = groupedMatches;
+    if (effectiveRoundKey !== "all") {
+      list = list.filter((g) => g.key === effectiveRoundKey);
+    }
+    if (filterPendingOnly) {
+      list = list
+        .map((g) => ({
+          ...g,
+          items: g.items.filter((m) => !m.isPlayed),
+        }))
+        .filter((g) => g.items.length > 0);
+    }
+    return list;
+  }, [groupedMatches, effectiveRoundKey, filterPendingOnly]);
 
   const handlePredictionChange = (matchId: number, side: "home" | "away", val: string) => {
     setDraftPreds((prev) => ({
@@ -107,6 +164,11 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
   const handleSavePrediction = async (matchId: number) => {
     if (!token || !activeTournament) {
       onOpenLogin();
+      return;
+    }
+
+    if (activeTournament.status !== "en_curso") {
+      alert("Solo se pueden cargar pronósticos en torneos que estén en curso.");
       return;
     }
 
@@ -137,15 +199,20 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
     }
   };
 
+  const hasPendingMatches = useMemo(() => matches.some((m) => !m.isPlayed), [matches]);
+  const canGenerate = canManageTournament && activeTournament?.status !== "finalizado";
+  const isTournamentOpen = activeTournament?.status === "en_curso";
+
   const handleGenerateFixture = async () => {
     if (!token || !activeTournament) return;
-    if (!confirm("¿Deseas generar el fixture oficial para este torneo? Se crearán los emparejamientos en base a los participantes asignados.")) {
+    if (!confirm("¿Deseas generar o sincronizar el fixture oficial para este torneo? Se crearán los partidos pendientes en base a los participantes asignados.")) {
       return;
     }
 
     try {
       setGeneratingFixture(true);
-      await generateTorneoFixture(token, activeTournament.id);
+      const res = await generateTorneoFixture(token, activeTournament.id);
+      alert(res.message || "Fixture generado exitosamente.");
       await loadProdeData();
     } catch (err: any) {
       alert(err.message || "Error al generar fixture");
@@ -175,7 +242,19 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+          {canGenerate && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleGenerateFixture}
+              disabled={generatingFixture}
+              title="Generar o sincronizar partidos pendientes del torneo"
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}
+            >
+              <span>📅</span> {generatingFixture ? "Sincronizando..." : "Sincronizar Fixture"}
+            </button>
+          )}
           <button
             type="button"
             className={`btn ${subTab === "matches" ? "btn-primary" : "btn-secondary"}`}
@@ -192,6 +271,33 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Tournament state alert if not en_curso */}
+      {activeTournament.status === "borrador" ? (
+        <div style={{
+          background: "rgba(234, 179, 8, 0.15)",
+          border: "1px solid #eab308",
+          borderRadius: "8px",
+          padding: "0.75rem 1.25rem",
+          marginBottom: "1.5rem",
+          color: "#fef08a",
+          fontSize: "0.9rem"
+        }}>
+          ⚠️ <strong>Torneo en borrador:</strong> Los pronósticos se habilitarán una vez que el torneo pase a estado &quot;En curso&quot;.
+        </div>
+      ) : activeTournament.status === "finalizado" ? (
+        <div style={{
+          background: "rgba(100, 116, 139, 0.2)",
+          border: "1px solid #64748b",
+          borderRadius: "8px",
+          padding: "0.75rem 1.25rem",
+          marginBottom: "1.5rem",
+          color: "#cbd5e1",
+          fontSize: "0.9rem"
+        }}>
+          🏁 <strong>Torneo finalizado:</strong> La competición concluyó y los pronósticos del Prode se encuentran cerrados.
+        </div>
+      ) : null}
 
       {/* Guest login banner */}
       {!currentUser && (
@@ -323,7 +429,7 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
               <p style={{ fontSize: "1.1rem", marginBottom: "1rem" }}>
                 Aún no hay partidos programados en este torneo para pronosticar.
               </p>
-              {canManageTournament && activeTournament.status !== "finalizado" && (
+              {canGenerate && (
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -336,8 +442,151 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
               )}
             </div>
           ) : (
-            groupedMatches.map((group) => (
-              <div key={group.title} style={{ marginBottom: "2rem" }}>
+            <>
+              {!hasPendingMatches && (
+                <div style={{
+                  background: "#1e293b",
+                  border: "1px solid #334155",
+                  borderRadius: "8px",
+                  padding: "1rem 1.25rem",
+                  marginBottom: "1.5rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "1rem"
+                }}>
+                  <div>
+                    <strong style={{ color: "#f8fafc" }}>No hay partidos pendientes para pronosticar</strong>
+                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#94a3b8" }}>
+                      Todos los partidos registrados actualmente ya fueron disputados.
+                      {canGenerate ? " Puedes sincronizar las fechas restantes del fixture para habilitar nuevos pronósticos." : ""}
+                    </p>
+                  </div>
+                  {canGenerate && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleGenerateFixture}
+                      disabled={generatingFixture}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+                    >
+                      <span>📅</span> {generatingFixture ? "Sincronizando..." : "Sincronizar Fixture Oficial"}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Round Selector & Quick Filter Toolbar */}
+              <div style={{
+                background: "#1e293b",
+                border: "1px solid #334155",
+                borderRadius: "8px",
+                padding: "0.75rem 1rem",
+                marginBottom: "1.5rem",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "1rem"
+              }}>
+                {/* Stepper + Dropdown */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handlePrevRound}
+                    disabled={currentRoundIndex <= 0 || effectiveRoundKey === "all"}
+                    style={{ padding: "0.35rem 0.65rem", fontSize: "0.85rem" }}
+                    title="Fecha anterior"
+                  >
+                    ◀ Anterior
+                  </button>
+
+                  <select
+                    className="form-select"
+                    value={effectiveRoundKey}
+                    onChange={(e) => setSelectedRoundKey(e.target.value)}
+                    style={{
+                      background: "#0f172a",
+                      color: "#f8fafc",
+                      border: "1px solid #475569",
+                      borderRadius: "6px",
+                      padding: "0.4rem 0.75rem",
+                      fontSize: "0.9rem",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      maxWidth: "320px"
+                    }}
+                  >
+                    <option value="all">Ver todas las fechas ({matches.length} partidos)</option>
+                    {groupedMatches.map((g) => {
+                      const isCurrent = g.key === activeRoundKey;
+                      const tag = g.pendingCount > 0 ? `${g.pendingCount} por jugar` : "finalizada";
+                      return (
+                        <option key={g.key} value={g.key}>
+                          {g.title} {isCurrent ? "⚡ ACTUAL" : ""} ({tag})
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleNextRound}
+                    disabled={currentRoundIndex < 0 || currentRoundIndex >= groupedMatches.length - 1 || effectiveRoundKey === "all"}
+                    style={{ padding: "0.35rem 0.65rem", fontSize: "0.85rem" }}
+                    title="Fecha siguiente"
+                  >
+                    Siguiente ▶
+                  </button>
+                </div>
+
+                {/* Filter Pending Toggle */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                  <label style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.4rem",
+                    fontSize: "0.85rem",
+                    color: filterPendingOnly ? "#60a5fa" : "#cbd5e1",
+                    fontWeight: filterPendingOnly ? "bold" : "normal",
+                    cursor: "pointer",
+                    userSelect: "none"
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={filterPendingOnly}
+                      onChange={(e) => setFilterPendingOnly(e.target.checked)}
+                      style={{ accentColor: "#3b82f6", cursor: "pointer", width: "16px", height: "16px" }}
+                    />
+                    <span>Solo partidos por pronosticar</span>
+                  </label>
+                </div>
+              </div>
+
+              {displayedGroups.length === 0 ? (
+                <div className="empty-state" style={{ textAlign: "center", padding: "2.5rem 1rem", background: "#0f172a", borderRadius: "8px", border: "1px solid #1e293b", marginBottom: "2rem" }}>
+                  <p style={{ color: "#94a3b8", fontSize: "0.95rem", marginBottom: "0.75rem" }}>
+                    {filterPendingOnly
+                      ? "No hay partidos pendientes por pronosticar en esta fecha."
+                      : "No hay partidos disponibles para mostrar."}
+                  </p>
+                  {filterPendingOnly && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setFilterPendingOnly(false)}
+                      style={{ fontSize: "0.85rem" }}
+                    >
+                      Mostrar todos los partidos de la fecha
+                    </button>
+                  )}
+                </div>
+              ) : (
+                displayedGroups.map((group) => (
+                  <div key={group.title} style={{ marginBottom: "2rem" }}>
                 <h3 style={{
                   background: "#1e293b",
                   padding: "0.5rem 1rem",
@@ -433,8 +682,9 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
                                 type="number"
                                 min="0"
                                 max="99"
-                                disabled={!currentUser || isSaving}
+                                disabled={!currentUser || isSaving || !isTournamentOpen}
                                 value={draft.home}
+                                onFocus={(e) => e.target.select()}
                                 onChange={(e) => handlePredictionChange(m.id_partido, "home", e.target.value)}
                                 placeholder="-"
                                 style={{
@@ -471,8 +721,9 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
                                 type="number"
                                 min="0"
                                 max="99"
-                                disabled={!currentUser || isSaving}
+                                disabled={!currentUser || isSaving || !isTournamentOpen}
                                 value={draft.away}
+                                onFocus={(e) => e.target.select()}
                                 onChange={(e) => handlePredictionChange(m.id_partido, "away", e.target.value)}
                                 placeholder="-"
                                 style={{
@@ -505,7 +756,7 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
                             <button
                               type="button"
                               className="btn btn-primary"
-                              disabled={isSaving}
+                              disabled={isSaving || !isTournamentOpen}
                               onClick={() => handleSavePrediction(m.id_partido)}
                               style={{ padding: "0.35rem 0.75rem", fontSize: "0.85rem" }}
                             >
@@ -580,8 +831,9 @@ export const ProdeView: React.FC<ProdeViewProps> = ({
                   })}
                 </div>
               </div>
-            ))
-          )}
+            )))}
+          </>
+        )}
         </div>
       )}
     </div>

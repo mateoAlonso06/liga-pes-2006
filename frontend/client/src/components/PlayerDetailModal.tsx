@@ -65,50 +65,50 @@ export const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({
       }}
     >
       <div className="modal-box player-detail-modal" style={{ maxWidth: "620px" }}>
-        {/* Header con botón de cierre */}
-        <div className="modal-header-row" style={{ alignItems: "flex-start", marginBottom: "16px" }}>
-          <div className="player-hero-header">
-            <UserAvatar
-              name={player.name}
-              avatarUrl={player.avatarUrl}
-              isRegistered={player.isRegistered}
-              size="xl"
-            />
-            <div className="player-hero-info">
-              <h2 id="player-modal-title" className="player-modal-name">
-                {player.name}
-              </h2>
-
-              <div className="player-badges-wrap">
-                {player.isRegistered ? (
-                  <span className="player-status-badge badge-registered">
-                    ✓ Usuario Registrado
-                    {player.userUsername && ` (@${player.userUsername})`}
-                  </span>
-                ) : (
-                  <span className="player-status-badge badge-guest">
-                    Jugador de la Comunidad (Sin cuenta)
-                  </span>
-                )}
-              </div>
-
-              {team && (
-                <div className="player-modal-team">
-                  <span style={{ fontSize: "1rem" }}>🛡️</span>
-                  <span>Equipo: <strong>{team.name}</strong></span>
-                </div>
-              )}
-            </div>
-          </div>
-
+        <div className="player-modal-top-bar">
           <button
             type="button"
-            className="modal-close-btn"
+            className="modal-close modal-close-btn"
             onClick={onClose}
             aria-label="Cerrar ficha de jugador"
           >
             ✕
           </button>
+        </div>
+
+        {/* Header con presentación del jugador */}
+        <div className="player-hero-header">
+          <UserAvatar
+            name={player.name}
+            avatarUrl={player.avatarUrl}
+            isRegistered={player.isRegistered}
+            size="2xl"
+          />
+          <div className="player-hero-info">
+            <h2 id="player-modal-title" className="player-modal-name">
+              {player.name}
+            </h2>
+
+            <div className="player-badges-wrap">
+              {player.isRegistered ? (
+                <span className="player-status-badge badge-registered">
+                  ✓ Usuario Registrado
+                  {player.userUsername && ` (@${player.userUsername})`}
+                </span>
+              ) : (
+                <span className="player-status-badge badge-guest">
+                  Jugador de la Comunidad (Sin cuenta)
+                </span>
+              )}
+            </div>
+
+            {team && (
+              <div className="player-modal-team">
+                <span style={{ fontSize: "1rem" }}>🛡️</span>
+                <span>Equipo: <strong>{team.name}</strong></span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Métricas Principales en el Torneo */}

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createClient } from '@libsql/client';
 import defaultDb from './db.js';
+import { initializeTournamentMatches } from './domain/fixtureGenerator.js';
 
 export async function runMigration(customClient = null) {
   const db = customClient || defaultDb;
@@ -122,7 +123,17 @@ export async function runMigration(customClient = null) {
     );
   `);
 
-  console.log('✓ Tablas juego, torneo, torneo_participante, prode_pronostico, torneo_solicitud y torneo_bloqueado verificadas/creadas.');
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS torneo_administrador (
+      id_torneo INTEGER NOT NULL REFERENCES torneo(id_torneo) ON DELETE CASCADE,
+      id_usuario INTEGER NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+      rol TEXT NOT NULL DEFAULT 'organizador' CHECK(rol IN ('organizador', 'moderador')),
+      asignado_en TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (id_torneo, id_usuario)
+    );
+  `);
+
+  console.log('✓ Tablas juego, torneo, torneo_participante, prode_pronostico, torneo_solicitud, torneo_bloqueado y torneo_administrador verificadas/creadas.');
 
   // 1.b Comprobar columnas id_juego en equipo y torneo, y id_usuario en persona
   const equipoCols = (await db.execute('PRAGMA table_info(equipo)')).rows.map((r) => r.name);
@@ -283,6 +294,22 @@ export async function runMigration(customClient = null) {
   await db.execute('UPDATE equipo SET id_juego = 1 WHERE id_juego IS NULL;');
   await db.execute("UPDATE torneo SET id_juego = 1, juego = 'PES 6 EuroAmericano Clásico 2' WHERE id_juego IS NULL;");
   await db.execute("UPDATE torneo SET codigo_invitacion = 'TRN-PES6-OFICIAL' WHERE codigo_invitacion IS NULL;");
+
+  // Asegurar consistencia de estado en partidos históricos sin estado
+  await db.execute("UPDATE partido SET estado = 'jugado' WHERE estado IS NULL;");
+
+  // Si Torneo 1 está en curso, sincronizar partidos pendientes del fixture
+  try {
+    const torneoOficial = await db.execute("SELECT id_torneo, formato FROM torneo WHERE id_torneo = 1 AND estado = 'en_curso'");
+    if (torneoOficial.rows.length > 0) {
+      const created = await initializeTournamentMatches(db, 1, torneoOficial.rows[0].formato);
+      if (created > 0) {
+        console.log(`✓ Sincronizados ${created} partidos pendientes para Torneo Oficial (id: 1).`);
+      }
+    }
+  } catch (err) {
+    console.warn('Advertencia al sincronizar fixture de Torneo Oficial:', err?.message || err);
+  }
 
   console.log('--- Migración Finalizada con Éxito ---');
 }

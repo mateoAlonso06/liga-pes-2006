@@ -28,6 +28,7 @@ export interface TorneoDto {
   estado: "borrador" | "en_curso" | "finalizado";
   id_organizador: number;
   organizador_username?: string;
+  admin_ids?: number[];
   campeon_id: number | null;
   campeon_nombre?: string;
   participantes_count?: number;
@@ -105,6 +106,7 @@ export function mapTorneoDtoToTournament(dto: TorneoDto): Tournament {
     status: dto.estado,
     organizerId: dto.id_organizador,
     organizerUsername: dto.organizador_username,
+    adminIds: dto.admin_ids ?? [],
     championId: dto.campeon_id,
     championName: dto.campeon_nombre,
     participantsCount: Number(dto.participantes_count ?? 0),
@@ -415,6 +417,29 @@ export interface ProposalDto {
   nombre_solicitante: string;
   estado: "pendiente" | "aprobado" | "rechazado";
   creado_en?: string;
+}
+
+export async function editarPropuesta(
+  token: string,
+  id: number,
+  payload: import("../domain/proposals").CreateProposalPayload
+): Promise<ProposalDto> {
+  const response = await fetch(`${API_BASE}/propuestas/${id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    const message = errorData?.error || `Error ${response.status}: ${response.statusText}`;
+    throw new Error(message);
+  }
+
+  return response.json();
 }
 
 export async function submitProposal(

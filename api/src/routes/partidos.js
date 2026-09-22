@@ -75,6 +75,8 @@ router.post('/', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'id_local and id_visitante must differ' });
     }
 
+    const resolvedEstado = estado ?? (goles_local !== undefined || goles_visitante !== undefined ? 'jugado' : 'pendiente');
+
     const result = await db.execute({
       sql: `INSERT INTO partido (
               goles_local, goles_visitante, numero_fecha, estado, id_local, id_visitante,
@@ -85,7 +87,7 @@ router.post('/', requireAuth, async (req, res, next) => {
         goles_local ?? 0,
         goles_visitante ?? 0,
         numero_fecha ?? null,
-        estado ?? null,
+        resolvedEstado,
         id_local,
         id_visitante,
         id_torneo ?? null,
@@ -97,7 +99,7 @@ router.post('/', requireAuth, async (req, res, next) => {
     });
     const newMatchId = Number(result.lastInsertRowid);
 
-    if (estado !== 'pendiente' && goles_local !== undefined && goles_visitante !== undefined) {
+    if (resolvedEstado !== 'pendiente' && goles_local !== undefined && goles_visitante !== undefined) {
       await settleMatchProde(db, newMatchId, goles_local, goles_visitante);
     }
 
@@ -106,7 +108,7 @@ router.post('/', requireAuth, async (req, res, next) => {
       goles_local: goles_local ?? 0,
       goles_visitante: goles_visitante ?? 0,
       numero_fecha: numero_fecha ?? null,
-      estado: estado ?? null,
+      estado: resolvedEstado,
       id_local,
       id_visitante,
       id_torneo: id_torneo ?? null,

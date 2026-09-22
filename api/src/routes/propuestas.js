@@ -46,6 +46,19 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'nombre_solicitante is required' });
     }
 
+    if (id_torneo) {
+      const torneoRes = await db.execute({
+        sql: 'SELECT estado FROM torneo WHERE id_torneo = ?',
+        args: [id_torneo]
+      });
+      if (torneoRes.rows.length === 0) {
+        return res.status(404).json({ error: 'Torneo not found' });
+      }
+      if (torneoRes.rows[0].estado !== 'en_curso') {
+        return res.status(409).json({ error: 'Solo se pueden cargar resultados en torneos en curso' });
+      }
+    }
+
     const goleadoresArr = goleadores ?? [];
     const rojasArr = rojas ?? [];
 
@@ -98,8 +111,11 @@ router.get('/', requireAuth, async (req, res, next) => {
           return res.status(403).json({ error: 'No tenés permisos para ver propuestas de este torneo' });
         }
       } else {
-        conditions.push('id_torneo IN (SELECT id_torneo FROM torneo WHERE id_organizador = ?)');
-        args.push(req.user.id);
+        conditions.push(`(
+          id_torneo IN (SELECT id_torneo FROM torneo WHERE id_organizador = ?)
+          OR id_torneo IN (SELECT id_torneo FROM torneo_administrador WHERE id_usuario = ?)
+        )`);
+        args.push(req.user.id, req.user.id);
       }
     }
 
@@ -118,6 +134,77 @@ router.get('/', requireAuth, async (req, res, next) => {
 
     const result = await db.execute({ sql, args });
     res.json(result.rows.map(toPropuestaResponse));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/:id', requireAuth, async (req, res, next) => {
+  try {
+    const {
+      id_local,
+      id_visitante,
+      goles_local,
+      goles_visitante,
+      numero_fecha,
+      goleadores,
+      rojas,
+    } = req.body;
+
+    const propuestaResult = await db.execute({
+      sql: 'SELECT * FROM propuesta_partido WHERE id_propuesta = ?',
+      args: [req.params.id],
+    });
+    if (propuestaResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Propuesta not found' });
+    }
+    const propuesta = propuestaResult.rows[0];
+
+    if (propuesta.estado !== 'pendiente') {
+      return res.status(409).json({ error: 'Solo se pueden editar propuestas pendientes' });
+    }
+
+    const allowed = await canManageTournament(req.user, propuesta.id_torneo, db);
+    if (!allowed) {
+      return res.status(403).json({ error: 'No tenés permisos para editar propuestas de este torneo' });
+    }
+
+    if (!id_local || !id_visitante) {
+      return res.status(400).json({ error: 'id_local and id_visitante are required' });
+    }
+    if (id_local === id_visitante) {
+      return res.status(400).json({ error: 'id_local and id_visitante must differ' });
+    }
+
+    const goleadoresArr = goleadores ?? [];
+    const rojasArr = rojas ?? [];
+
+    await db.execute({
+      sql: `UPDATE propuesta_partido
+            SET id_local = ?, id_visitante = ?, goles_local = ?, goles_visitante = ?, numero_fecha = ?, goleadores_json = ?, rojas_json = ?
+            WHERE id_propuesta = ?`,
+      args: [
+        id_local,
+        id_visitante,
+        goles_local ?? 0,
+        goles_visitante ?? 0,
+        numero_fecha ?? null,
+        JSON.stringify(goleadoresArr),
+        JSON.stringify(rojasArr),
+        req.params.id,
+      ],
+    });
+
+    res.status(200).json({
+      ...toPropuestaResponse(propuesta),
+      id_local,
+      id_visitante,
+      goles_local: goles_local ?? 0,
+      goles_visitante: goles_visitante ?? 0,
+      numero_fecha: numero_fecha ?? null,
+      goleadores: goleadoresArr,
+      rojas: rojasArr,
+    });
   } catch (err) {
     next(err);
   }

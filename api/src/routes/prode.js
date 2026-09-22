@@ -78,7 +78,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
 
     // Assemble payload
     const items = matches.map((m) => {
-      const isPlayed = m.estado !== 'pendiente';
+      const isPlayed = m.estado === 'jugado' || (m.estado !== 'pendiente' && m.goles_local !== null && m.goles_visitante !== null);
       return {
         ...m,
         isPlayed,

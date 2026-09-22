@@ -325,6 +325,25 @@ describe('Torneos API Integration Tests', () => {
     });
     assert.equal(orgMatchRes.status, 201);
     const createdMatch = await orgMatchRes.json();
+    
+    // Add participants and start tournament to allow proposals
+    await fetch(`${baseUrl}/torneos/${orgTorneoId}/participantes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${organizerToken}`,
+      },
+      body: JSON.stringify({
+        participantes: [
+          { id_persona: persona1Id, id_equipo: equipo1Id },
+          { id_persona: persona2Id, id_equipo: equipo2Id }
+        ]
+      })
+    });
+    await fetch(`${baseUrl}/torneos/${orgTorneoId}/iniciar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${organizerToken}` }
+    });
 
     // Stranger tries to update match -> 403
     const strangerUpdateRes = await fetch(`${baseUrl}/partidos/${createdMatch.id_partido}`, {
@@ -617,5 +636,175 @@ describe('Torneos API Integration Tests', () => {
       body: JSON.stringify({ codigo: inviteCode }),
     });
     assert.equal(rejoinRes.status, 201);
+  });
+
+  it('Co-organizers in torneo_administrador can manage tournaments', async () => {
+    // 1. Create tournament by organizer
+    const tRes = await fetch(`${baseUrl}/torneos`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${organizerToken}`,
+      },
+      body: JSON.stringify({ nombre: `CoAdmin Cup ${Date.now()}`, formato: 'liga_ida' }),
+    });
+    const tData = await tRes.json();
+    const tId = tData.id_torneo;
+
+    // 2. Register a new user
+    const coUserRes = await fetch(`${baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: `coadmin_${Date.now()}`, password: 'password123' }),
+    });
+    const coUserData = await coUserRes.json();
+    const coUserToken = coUserData.accessToken;
+    const coUserId = coUserData.user.id;
+
+    // Initially coUser is NOT an organizer -> 403 to modify
+    const failUpdate = await fetch(`${baseUrl}/torneos/${tId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${coUserToken}`,
+      },
+      body: JSON.stringify({ descripcion: 'Should fail' }),
+    });
+    assert.equal(failUpdate.status, 403);
+
+    // 3. Insert user into torneo_administrador directly (the bypass mechanism)
+    await db.execute({
+      sql: 'INSERT INTO torneo_administrador (id_torneo, id_usuario, rol) VALUES (?, ?, ?)',
+      args: [tId, coUserId, 'organizador'],
+    });
+
+    // 4. Now coUser CAN manage tournament (modify, see invite code)
+    const successUpdate = await fetch(`${baseUrl}/torneos/${tId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${coUserToken}`,
+      },
+      body: JSON.stringify({ descripcion: 'Updated by co-admin' }),
+    });
+    assert.equal(successUpdate.status, 200);
+
+    const getRes = await fetch(`${baseUrl}/torneos/${tId}`, {
+      headers: { Authorization: `Bearer ${coUserToken}` },
+    });
+    const getData = await getRes.json();
+    assert.ok(getData.codigo_invitacion);
+    assert.ok(getData.admin_ids.includes(coUserId));
+  });
+
+  it('completes missing fixture matches for an in-progress tournament with existing matches and allows prode predictions', async () => {
+    // 1. Create a tournament
+    const torRes = await fetch(`${baseUrl}/torneos`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({
+        nombre: `Fixture Sync Test ${Date.now()}`,
+        formato: 'liga_ida',
+        juego: 'PES 6 EuroAmericano Clásico 2',
+      }),
+    });
+    const torData = await torRes.json();
+    const tId = torData.id_torneo;
+
+    // 2. Add 4 participants
+    const partsList = [];
+    for (let i = 1; i <= 4; i++) {
+      const eqRes = await db.execute({
+        sql: `INSERT INTO equipo (nombre) VALUES (?)`,
+        args: [`Sync Team ${i}_${Date.now()}`],
+      });
+      const eqId = Number(eqRes.lastInsertRowid);
+      const pRes = await db.execute({
+        sql: `INSERT INTO persona (nombre, id_equipo) VALUES (?, ?)`,
+        args: [`Sync Player ${i}_${Date.now()}`, eqId],
+      });
+      partsList.push({ id_persona: Number(pRes.lastInsertRowid), id_equipo: eqId });
+    }
+    const addPartsRes = await fetch(`${baseUrl}/torneos/${tId}/participantes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ participantes: partsList }),
+    });
+    assert.equal(addPartsRes.status, 201);
+
+    // 3. Start tournament (generates all 6 matches for 4 players in liga_ida: 3 dates x 2 matches)
+    await fetch(`${baseUrl}/torneos/${tId}/iniciar`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ generar_fixture: true }),
+    });
+
+    // Check matches count
+    const prodeRes1 = await fetch(`${baseUrl}/torneos/${tId}/prode`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const prodeData1 = await prodeRes1.json();
+    assert.equal(prodeData1.partidos.length, 6);
+    assert.equal(prodeData1.partidos.filter(p => !p.isPlayed).length, 6);
+
+    // 4. Play one match (simulated as approved proposal/result)
+    const matchToPlay = prodeData1.partidos[0];
+    await db.execute({
+      sql: `UPDATE partido SET goles_local = 2, goles_visitante = 1, estado = 'jugado' WHERE id_partido = ?`,
+      args: [matchToPlay.id_partido],
+    });
+
+    // 5. Delete one of the pending matches to simulate a missing fixture match
+    const matchToDelete = prodeData1.partidos[5];
+    await db.execute({
+      sql: `DELETE FROM partido WHERE id_partido = ?`,
+      args: [matchToDelete.id_partido],
+    });
+
+    // 6. Call generar-fixture again: should not fail, should recreate the 1 missing pending match
+    const syncRes = await fetch(`${baseUrl}/torneos/${tId}/generar-fixture`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+    });
+    assert.equal(syncRes.status, 201);
+    const syncData = await syncRes.json();
+    assert.equal(syncData.partidos_creados, 1);
+
+    // 7. Re-fetch prode: all 6 matches exist, 1 played, 5 pending, and user can submit prediction
+    const prodeRes2 = await fetch(`${baseUrl}/torneos/${tId}/prode`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const prodeData2 = await prodeRes2.json();
+    assert.equal(prodeData2.partidos.length, 6);
+    const pendingMatches = prodeData2.partidos.filter(p => !p.isPlayed);
+    assert.equal(pendingMatches.length, 5);
+
+    // Predict one of the pending matches
+    const predMatch = pendingMatches[0];
+    const submitRes = await fetch(`${baseUrl}/torneos/${tId}/prode`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({
+        id_partido: predMatch.id_partido,
+        goles_local: 3,
+        goles_visitante: 0,
+      }),
+    });
+    assert.equal(submitRes.status, 201);
   });
 });

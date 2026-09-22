@@ -19,6 +19,9 @@ interface ProposalFormProps {
   format?: "ida" | "ida_vuelta";
   tournamentId?: number;
   onSuccess?: () => void;
+  initialProposal?: ProposalDto;
+  onSubmitOverride?: (payload: import("../domain/proposals").CreateProposalPayload) => Promise<ProposalDto>;
+  onCancel?: () => void;
 }
 
 export function ProposalForm({
@@ -28,22 +31,34 @@ export function ProposalForm({
   format = "ida",
   tournamentId,
   onSuccess,
+  initialProposal,
+  onSubmitOverride,
+  onCancel,
 }: ProposalFormProps) {
   const teamMap = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
   const playerMap = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
 
-  const initialPlayerA = players[0]?.id ?? "";
-  const initialPlayerB = players[1]?.id ?? (players[0]?.id ?? "");
+  const initialPlayerA = initialProposal ? String(initialProposal.id_local) : players[0]?.id ?? "";
+  const initialPlayerB = initialProposal ? String(initialProposal.id_visitante) : players[1]?.id ?? (players[0]?.id ?? "");
 
   const [formState, setFormState] = useState<ProposalFormState>({
-    applicantName: "",
+    applicantName: initialProposal ? initialProposal.nombre_solicitante : "",
     playerAId: initialPlayerA,
     playerBId: initialPlayerB,
-    goalsA: 0,
-    goalsB: 0,
-    roundNumber: null,
-    scorers: [],
-    redCards: [],
+    goalsA: initialProposal ? initialProposal.goles_local : 0,
+    goalsB: initialProposal ? initialProposal.goles_visitante : 0,
+    roundNumber: initialProposal ? initialProposal.numero_fecha : null,
+    scorers: initialProposal ? initialProposal.goleadores.map(g => ({
+      id: crypto.randomUUID(),
+      virtualPlayer: g.jugador,
+      playerId: String(g.personaId),
+      amount: g.cantidad,
+    })) : [],
+    redCards: initialProposal ? initialProposal.rojas.map(r => ({
+      id: crypto.randomUUID(),
+      virtualPlayer: r.jugador,
+      playerId: String(r.personaId),
+    })) : [],
   });
 
   const [validationErrors, setValidationErrors] = useState<ProposalValidationErrors>({});
@@ -190,7 +205,9 @@ export function ProposalForm({
         ...mapProposalInputToPayload(stateToSubmit),
         id_torneo: tournamentId ?? null,
       };
-      const result = await submitProposal(payload);
+      const result = onSubmitOverride 
+        ? await onSubmitOverride(payload)
+        : await submitProposal(payload);
       setSubmittedProposal(result);
     } catch (err) {
       const message =
@@ -447,12 +464,17 @@ export function ProposalForm({
               className={`form-input ${validationErrors.goalsA ? "input-error" : ""}`}
               value={formState.goalsA}
               onChange={(e) => {
-                const val = parseInt(e.target.value || "0", 10);
-                setFormState((prev) => ({ ...prev, goalsA: val }));
+                const raw = e.target.value;
+                const val = raw === "" ? "" : parseInt(raw, 10);
+                setFormState((prev) => ({
+                  ...prev,
+                  goalsA: Number.isNaN(val) ? "" : val,
+                }));
                 if (validationErrors.goalsA || validationErrors.scorers) {
                   setValidationErrors((prev) => ({ ...prev, goalsA: undefined, scorers: undefined }));
                 }
               }}
+              onFocus={(e) => e.target.select()}
               disabled={isSubmitting}
               required
             />
@@ -472,12 +494,17 @@ export function ProposalForm({
               className={`form-input ${validationErrors.goalsB ? "input-error" : ""}`}
               value={formState.goalsB}
               onChange={(e) => {
-                const val = parseInt(e.target.value || "0", 10);
-                setFormState((prev) => ({ ...prev, goalsB: val }));
+                const raw = e.target.value;
+                const val = raw === "" ? "" : parseInt(raw, 10);
+                setFormState((prev) => ({
+                  ...prev,
+                  goalsB: Number.isNaN(val) ? "" : val,
+                }));
                 if (validationErrors.goalsB || validationErrors.scorers) {
                   setValidationErrors((prev) => ({ ...prev, goalsB: undefined, scorers: undefined }));
                 }
               }}
+              onFocus={(e) => e.target.select()}
               disabled={isSubmitting}
               required
             />
@@ -652,8 +679,19 @@ export function ProposalForm({
             className="btn btn-gold btn-lg"
             disabled={isSubmitting || pendingRounds.length === 0}
           >
-            {isSubmitting ? "Enviando propuesta..." : "📨 Enviar para revisión"}
+            {isSubmitting ? "Enviando..." : initialProposal ? "💾 Guardar Cambios" : "📨 Enviar para revisión"}
           </button>
+          {onCancel && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-lg"
+              onClick={onCancel}
+              disabled={isSubmitting}
+              style={{ marginLeft: "12px" }}
+            >
+              Cancelar
+            </button>
+          )}
         </div>
       </form>
     </div>

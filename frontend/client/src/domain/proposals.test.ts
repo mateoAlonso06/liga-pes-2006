@@ -52,6 +52,13 @@ describe("domain/proposals - validateProposal", () => {
     assert.ok(result.errors.goalsA);
   });
 
+  it("fails when goals are empty string", () => {
+    const state: ProposalFormState = { ...baseValidState, goalsA: "" };
+    const result = validateProposal(state);
+    assert.equal(result.isValid, false);
+    assert.ok(result.errors.goalsA);
+  });
+
   it("fails when roundNumber is not in availableRounds", () => {
     const result = validateProposal(baseValidState, { availableRounds: [2, 3] });
     assert.equal(result.isValid, false);

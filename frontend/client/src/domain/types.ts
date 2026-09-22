@@ -19,6 +19,7 @@ export interface Tournament {
   status: TournamentStatus;
   organizerId: number;
   organizerUsername?: string;
+  adminIds?: number[];
   championId: number | null;
   championName?: string;
   participantsCount?: number;

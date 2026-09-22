@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS torneo_bloqueado (
   PRIMARY KEY (id_torneo, id_usuario)
 );
 
+-- torneo_administrador: Co-administradores y moderadores secundarios por torneo
+CREATE TABLE IF NOT EXISTS torneo_administrador (
+  id_torneo INTEGER NOT NULL REFERENCES torneo(id_torneo) ON DELETE CASCADE,
+  id_usuario INTEGER NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+  rol TEXT NOT NULL DEFAULT 'organizador' CHECK(rol IN ('organizador', 'moderador')),
+  asignado_en TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (id_torneo, id_usuario)
+);
+
 CREATE TABLE IF NOT EXISTS partido (
   id_partido INTEGER PRIMARY KEY AUTOINCREMENT,
   id_torneo INTEGER NULL REFERENCES torneo(id_torneo),

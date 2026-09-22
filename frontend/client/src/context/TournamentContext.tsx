@@ -61,7 +61,11 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
 
   const canManageActiveTournament = useMemo(() => {
     if (!activeTournament || !user) return false;
-    return isAdmin || user.id === activeTournament.organizerId;
+    return (
+      isAdmin ||
+      user.id === activeTournament.organizerId ||
+      (Array.isArray(activeTournament.adminIds) && activeTournament.adminIds.includes(user.id))
+    );
   }, [activeTournament, user, isAdmin]);
 
   const value = useMemo<TournamentContextType>(

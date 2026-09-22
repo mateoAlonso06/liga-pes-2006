@@ -386,18 +386,16 @@ export function App() {
               <span className="tab-badge">🎯</span>
             </span>
           </button>
-          {activeTournament?.status !== "finalizado" && (
-            <button
-              type="button"
-              className={`tab-btn ${activeTab === "cargar" ? "active" : ""}`}
-              onClick={() => setActiveTab("cargar")}
-            >
-              <span>
-                Cargar Resultado
-                <span className="tab-badge">✍️</span>
-              </span>
-            </button>
-          )}
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === "cargar" ? "active" : ""}`}
+            onClick={() => setActiveTab("cargar")}
+          >
+            <span>
+              Cargar Resultado
+              <span className="tab-badge">✍️</span>
+            </span>
+          </button>
           {(isAdmin || canManageActiveTournament) && (
             <button
               type="button"
@@ -513,17 +511,29 @@ export function App() {
               )}
 
               {activeTab === "cargar" && (
-                <ProposalForm
-                  players={data?.players ?? []}
-                  teams={data?.teams ?? []}
-                  matches={data?.matches ?? []}
-                  format={fixtureFormat}
-                  tournamentId={activeTournamentId ?? undefined}
-                  onSuccess={() => {
-                    void handleRefresh();
-                    setActiveTab("posiciones");
-                  }}
-                />
+                activeTournament?.status === "en_curso" ? (
+                  <ProposalForm
+                    players={data?.players ?? []}
+                    teams={data?.teams ?? []}
+                    matches={data?.matches ?? []}
+                    format={fixtureFormat}
+                    tournamentId={activeTournamentId ?? undefined}
+                    onSuccess={() => {
+                      void handleRefresh();
+                      setActiveTab("posiciones");
+                    }}
+                  />
+                ) : (
+                  <div className="empty-state">
+                    <div style={{ fontSize: "2.5rem", marginBottom: "10px" }}>⚠️</div>
+                    <h3>No se pueden cargar resultados</h3>
+                    <p>
+                      {activeTournament?.status === "borrador"
+                        ? "El torneo todavía no inició. Esperá a que el organizador haga el sorteo y dé comienzo al torneo."
+                        : "El torneo ya ha finalizado. No se pueden cargar más resultados."}
+                    </p>
+                  </div>
+                )
               )}
               {activeTab === "sorteo" && (
                 <SorteoView

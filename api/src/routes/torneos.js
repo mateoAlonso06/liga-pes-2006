@@ -30,11 +30,21 @@ async function getTorneoOr404(id, res) {
     res.status(404).json({ error: 'Torneo no encontrado' });
     return null;
   }
-  return result.rows[0];
+  const torneo = result.rows[0];
+  const adminRes = await db.execute({
+    sql: 'SELECT id_usuario FROM torneo_administrador WHERE id_torneo = ?',
+    args: [id],
+  });
+  torneo.admin_ids = adminRes.rows.map((r) => Number(r.id_usuario));
+  return torneo;
 }
 
 function checkCanManageTorneo(user, torneo, res) {
-  if (user.role === 'admin' || torneo.id_organizador === user.id) {
+  if (
+    user.role === 'admin' ||
+    Number(torneo.id_organizador) === Number(user.id) ||
+    (Array.isArray(torneo.admin_ids) && torneo.admin_ids.includes(Number(user.id)))
+  ) {
     return true;
   }
   res.status(403).json({ error: 'No tenés permisos para gestionar este torneo' });
@@ -80,10 +90,26 @@ router.get('/', optionalAuth, async (req, res, next) => {
     sql += ' GROUP BY t.id_torneo ORDER BY t.id_torneo DESC';
 
     const result = await db.execute({ sql, args });
+    const adminRows = await db.execute({
+      sql: 'SELECT id_torneo, id_usuario FROM torneo_administrador',
+      args: [],
+    });
+    const adminsByTorneo = new Map();
+    for (const r of adminRows.rows) {
+      if (!adminsByTorneo.has(r.id_torneo)) adminsByTorneo.set(r.id_torneo, []);
+      adminsByTorneo.get(r.id_torneo).push(Number(r.id_usuario));
+    }
+
     const rows = result.rows.map((t) => {
-      const canSeeCode = req.user && (req.user.role === 'admin' || req.user.id === t.id_organizador);
+      const adminIds = adminsByTorneo.get(t.id_torneo) || [];
+      const canSeeCode = req.user && (
+        req.user.role === 'admin' ||
+        req.user.id === t.id_organizador ||
+        adminIds.includes(req.user.id)
+      );
       return {
         ...t,
+        admin_ids: adminIds,
         codigo_invitacion: canSeeCode ? t.codigo_invitacion : null,
       };
     });
@@ -232,10 +258,15 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
       args: [req.params.id],
     });
 
-    const canSeeCode = req.user && (req.user.role === 'admin' || req.user.id === torneo.id_organizador);
+    const canSeeCode = req.user && (
+      req.user.role === 'admin' ||
+      req.user.id === torneo.id_organizador ||
+      (Array.isArray(torneo.admin_ids) && torneo.admin_ids.includes(req.user.id))
+    );
 
     res.json({
       ...torneo,
+      admin_ids: torneo.admin_ids || [],
       codigo_invitacion: canSeeCode ? torneo.codigo_invitacion : null,
       configuracion: JSON.parse(torneo.configuracion_json || '{}'),
       participantes: participantesResult.rows,
@@ -560,7 +591,7 @@ router.post('/:id/iniciar', requireAuth, async (req, res, next) => {
   }
 });
 
-// POST /torneos/:id/generar-fixture - Generar fixture oficial en base a participantes y formato
+// POST /torneos/:id/generar-fixture - Generar o completar fixture oficial en base a participantes y formato
 router.post('/:id/generar-fixture', requireAuth, async (req, res, next) => {
   try {
     const torneo = await getTorneoOr404(req.params.id, res);
@@ -571,24 +602,13 @@ router.post('/:id/generar-fixture', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'No se puede generar fixture para un torneo finalizado.' });
     }
 
-    const existingMatches = await db.execute({
-      sql: 'SELECT COUNT(*) as count FROM partido WHERE id_torneo = ?',
-      args: [req.params.id],
-    });
-    if (Number(existingMatches.rows[0]?.count ?? 0) > 0) {
-      return res.status(400).json({ error: 'El torneo ya tiene partidos registrados o generados.' });
-    }
-
-    await initializeTournamentMatches(db, req.params.id, torneo.formato);
-
-    const generated = await db.execute({
-      sql: 'SELECT COUNT(*) as count FROM partido WHERE id_torneo = ?',
-      args: [req.params.id],
-    });
+    const createdCount = await initializeTournamentMatches(db, req.params.id, torneo.formato);
 
     res.status(201).json({
-      message: 'Fixture generado exitosamente.',
-      partidos_creados: Number(generated.rows[0]?.count ?? 0),
+      message: createdCount > 0
+        ? `Fixture generado exitosamente (${createdCount} partidos pendientes creados).`
+        : 'El fixture ya se encuentra completo para todos los participantes.',
+      partidos_creados: createdCount,
     });
   } catch (err) {
     next(err);
@@ -873,8 +893,11 @@ router.post('/:id/bloquear', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'id_usuario es obligatorio para bloquear a un usuario' });
     }
 
-    if (Number(id_usuario) === Number(torneo.id_organizador)) {
-      return res.status(400).json({ error: 'El organizador no puede bloquearse a sí mismo' });
+    if (
+      Number(id_usuario) === Number(torneo.id_organizador) ||
+      (Array.isArray(torneo.admin_ids) && torneo.admin_ids.includes(Number(id_usuario)))
+    ) {
+      return res.status(400).json({ error: 'No se puede bloquear a un organizador o administrador del torneo' });
     }
 
     // Insert or update in blocklist

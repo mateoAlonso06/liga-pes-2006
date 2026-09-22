@@ -55,24 +55,28 @@ export function generatePairings(participantIds, format = 'ida') {
  * @param {string} formato 
  */
 export async function initializeTournamentMatches(db, idTorneo, formato) {
-  // Check if matches already exist for this tournament
-  const existingMatches = await db.execute({
-    sql: 'SELECT COUNT(*) as count FROM partido WHERE id_torneo = ?',
-    args: [idTorneo],
-  });
-  if (Number(existingMatches.rows[0]?.count ?? 0) > 0) {
-    return;
-  }
-
   const participantsRes = await db.execute({
     sql: 'SELECT id_persona, sembrado FROM torneo_participante WHERE id_torneo = ? ORDER BY sembrado ASC, id_persona ASC',
     args: [idTorneo],
   });
   const participants = participantsRes.rows.map((p) => Number(p.id_persona));
 
-  if (participants.length < 2) return;
+  if (participants.length < 2) return 0;
+
+  const existingMatchesRes = await db.execute({
+    sql: 'SELECT id_partido, numero_fecha, id_local, id_visitante, estado FROM partido WHERE id_torneo = ?',
+    args: [idTorneo],
+  });
+  const existingMatches = existingMatchesRes.rows;
+
+  let createdCount = 0;
 
   if (formato === 'eliminacion_directa') {
+    // If knockout matches already exist, do not regenerate the tree
+    if (existingMatches.length > 0) {
+      return 0;
+    }
+
     // Determine stage name
     let etapa = 'final';
     if (participants.length > 8) {
@@ -93,6 +97,7 @@ export async function initializeTournamentMatches(db, idTorneo, formato) {
                 VALUES (?, ?, 1, 'pendiente', ?, ?, 0, 0)`,
           args: [idTorneo, etapa, p1, p2],
         });
+        createdCount++;
       }
     }
   } else {
@@ -106,13 +111,24 @@ export async function initializeTournamentMatches(db, idTorneo, formato) {
 
       for (const [idLocal, idVisitante] of roundMatches) {
         if (idLocal !== null && idVisitante !== null) {
-          await db.execute({
-            sql: `INSERT INTO partido (id_torneo, etapa, numero_fecha, estado, id_local, id_visitante, goles_local, goles_visitante)
-                  VALUES (?, 'fecha', ?, 'pendiente', ?, ?, 0, 0)`,
-            args: [idTorneo, numeroFecha, idLocal, idVisitante],
-          });
+          const alreadyExists = existingMatches.some((m) =>
+            m.numero_fecha === numeroFecha &&
+            ((m.id_local === idLocal && m.id_visitante === idVisitante) ||
+             (m.id_local === idVisitante && m.id_visitante === idLocal))
+          );
+
+          if (!alreadyExists) {
+            await db.execute({
+              sql: `INSERT INTO partido (id_torneo, etapa, numero_fecha, estado, id_local, id_visitante, goles_local, goles_visitante)
+                    VALUES (?, 'fecha', ?, 'pendiente', ?, ?, 0, 0)`,
+              args: [idTorneo, numeroFecha, idLocal, idVisitante],
+            });
+            createdCount++;
+          }
         }
       }
     }
   }
+
+  return createdCount;
 }

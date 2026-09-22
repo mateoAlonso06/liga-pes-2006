@@ -18,8 +18,8 @@ export interface ProposalFormState {
   applicantName: string;
   playerAId: string;
   playerBId: string;
-  goalsA: number;
-  goalsB: number;
+  goalsA: number | "";
+  goalsB: number | "";
   roundNumber: number | null;
   scorers: ProposalScorerItem[];
   redCards: ProposalRedCardItem[];
@@ -130,6 +130,8 @@ export function validateProposal(
   }
 
   if (
+    state.goalsA === "" ||
+    typeof state.goalsA !== "number" ||
     Number.isNaN(state.goalsA) ||
     state.goalsA < 0 ||
     !Number.isInteger(state.goalsA)
@@ -138,6 +140,8 @@ export function validateProposal(
   }
 
   if (
+    state.goalsB === "" ||
+    typeof state.goalsB !== "number" ||
     Number.isNaN(state.goalsB) ||
     state.goalsB < 0 ||
     !Number.isInteger(state.goalsB)
@@ -224,8 +228,8 @@ export function mapProposalInputToPayload(state: ProposalFormState): CreatePropo
   return {
     id_local: Number(state.playerAId),
     id_visitante: Number(state.playerBId),
-    goles_local: state.goalsA,
-    goles_visitante: state.goalsB,
+    goles_local: typeof state.goalsA === "number" ? state.goalsA : 0,
+    goles_visitante: typeof state.goalsB === "number" ? state.goalsB : 0,
     numero_fecha: state.roundNumber,
     nombre_solicitante: state.applicantName.trim(),
     goleadores: state.scorers

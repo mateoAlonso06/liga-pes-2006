@@ -31,38 +31,64 @@ export const StandingsTable: React.FC<StandingsTableProps> = ({ standings, onSel
           </tr>
         </thead>
         <tbody>
-          {standings.map((row, index) => (
-            <tr key={row.playerId}>
-              <td className="col-number badge-position">{index + 1}</td>
-              <td className="player-name">
-                <div style={{ display: "inline-flex", alignItems: "center", gap: "10px" }}>
-                  <UserAvatar
-                    name={row.playerName}
-                    avatarUrl={row.avatarUrl}
-                    isRegistered={row.isRegistered}
-                    size="sm"
-                    onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
-                  />
-                  <span
-                    className={onSelectPlayer ? "player-clickable-name" : ""}
-                    onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
-                    title={onSelectPlayer ? `Ver ficha de ${row.playerName}` : undefined}
-                  >
-                    {row.playerName}
-                  </span>
-                </div>
-              </td>
-              <td className="team-name">{row.teamName}</td>
-              <td className="col-stat">{row.played}</td>
-              <td className="col-stat">{row.won}</td>
-              <td className="col-stat">{row.drawn}</td>
-              <td className="col-stat">{row.lost}</td>
-              <td className="col-stat">{row.goalsFor}</td>
-              <td className="col-stat">{row.goalsAgainst}</td>
-              <td className="col-stat">{row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}</td>
-              <td className="col-pts"><strong>{row.points}</strong></td>
-            </tr>
-          ))}
+          {standings.map((row, index) => {
+            const position = index + 1;
+            const rankClass =
+              position === 1
+                ? "row-rank-1"
+                : position === 2
+                ? "row-rank-2"
+                : position === 3
+                ? "row-rank-3"
+                : "";
+
+            return (
+              <tr key={row.playerId} className={rankClass}>
+                <td className="col-number">
+                  {position <= 3 ? (
+                    <span className={`pos-podium-badge pos-rank-${position}`} title={`Puesto ${position}`}>
+                      {position}
+                    </span>
+                  ) : (
+                    <span className="badge-position">{position}</span>
+                  )}
+                </td>
+                <td className="player-name">
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "10px" }}>
+                    <UserAvatar
+                      name={row.playerName}
+                      avatarUrl={row.avatarUrl}
+                      isRegistered={row.isRegistered}
+                      size="md"
+                      className={position === 1 ? "avatar-leader" : ""}
+                      onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
+                    />
+                    <span
+                      className={onSelectPlayer ? "player-clickable-name" : ""}
+                      onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
+                      title={onSelectPlayer ? `Ver ficha de ${row.playerName}` : undefined}
+                    >
+                      {row.playerName}
+                    </span>
+                    {position === 1 && (
+                      <span className="leader-tag" title="Puntero actual del torneo">
+                        LÍDER
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="team-name">{row.teamName}</td>
+                <td className="col-stat">{row.played}</td>
+                <td className="col-stat">{row.won}</td>
+                <td className="col-stat">{row.drawn}</td>
+                <td className="col-stat">{row.lost}</td>
+                <td className="col-stat">{row.goalsFor}</td>
+                <td className="col-stat">{row.goalsAgainst}</td>
+                <td className="col-stat">{row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}</td>
+                <td className="col-pts"><strong>{row.points}</strong></td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

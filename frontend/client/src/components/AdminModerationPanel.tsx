@@ -4,6 +4,7 @@ import {
   fetchPropuestas,
   aprobarPropuesta,
   rechazarPropuesta,
+  editarPropuesta,
   fetchTorneoSolicitudes,
   aprobarTorneoSolicitud,
   rechazarTorneoSolicitud,
@@ -20,6 +21,8 @@ import {
 import { useAuth } from "../context/useAuth";
 import { useTournament } from "../context/useTournament";
 import { UserAvatar } from "./UserAvatar";
+import { ProposalForm } from "./ProposalForm";
+import type { CreateProposalPayload } from "../domain/proposals";
 
 interface AdminModerationPanelProps {
   players: Player[];
@@ -45,6 +48,7 @@ export function AdminModerationPanel({
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<number | null>(null);
   const [actionType, setActionType] = useState<"aprobar" | "rechazar" | null>(null);
+  const [editingPropuestaId, setEditingPropuestaId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
@@ -113,6 +117,18 @@ export function AdminModerationPanel({
       setActionId(null);
       setActionType(null);
     }
+  };
+
+  const handleEditSubmit = async (propuestaId: number, payload: CreateProposalPayload) => {
+    if (!token) throw new Error("No token");
+    const updated = await editarPropuesta(token, propuestaId, payload);
+    setPropuestas((prev) => prev.map((p) => p.id_propuesta === propuestaId ? updated : p));
+    setEditingPropuestaId(null);
+    setFeedback({
+      type: "success",
+      text: `Propuesta #${propuestaId} actualizada con éxito.`
+    });
+    return updated;
   };
 
   const handleRechazar = async (propuesta: ProposalDto) => {
@@ -574,6 +590,21 @@ export function AdminModerationPanel({
 
             return (
               <div key={p.id_propuesta} className="proposal-card">
+                {editingPropuestaId === p.id_propuesta ? (
+                  <div style={{ padding: "12px", background: "var(--bg-secondary)", borderRadius: "8px" }}>
+                    <h4 style={{ marginBottom: "16px", marginTop: 0 }}>Editando Propuesta #{p.id_propuesta}</h4>
+                    <ProposalForm
+                      players={players}
+                      teams={teams}
+                      matches={[]}
+                      tournamentId={tournamentId}
+                      initialProposal={p}
+                      onSubmitOverride={(payload) => handleEditSubmit(p.id_propuesta, payload)}
+                      onCancel={() => setEditingPropuestaId(null)}
+                    />
+                  </div>
+                ) : (
+                  <>
                 <div className="proposal-card-header">
                   <div className="proposal-matchup" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -663,6 +694,14 @@ export function AdminModerationPanel({
                 <div className="proposal-actions-row">
                   <button
                     type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setEditingPropuestaId(p.id_propuesta)}
+                    disabled={isProcessingThis || editingPropuestaId === p.id_propuesta}
+                  >
+                    ✏️ Editar
+                  </button>
+                  <button
+                    type="button"
                     className="btn btn-gold btn-sm"
                     onClick={() => void handleAprobar(p)}
                     disabled={isProcessingThis}
@@ -682,6 +721,8 @@ export function AdminModerationPanel({
                       : "✕ Rechazar"}
                   </button>
                 </div>
+                </>
+                )}
               </div>
             );
           })}

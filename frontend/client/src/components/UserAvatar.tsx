@@ -4,7 +4,7 @@ export interface UserAvatarProps {
   name: string;
   avatarUrl?: string | null;
   isRegistered?: boolean;
-  size?: "xs" | "sm" | "md" | "lg" | "xl";
+  size?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
   className?: string;
   showTooltip?: boolean;
   onClick?: () => void;
@@ -16,6 +16,7 @@ const SIZE_MAP = {
   md: { box: 48, font: 18, border: 2 },
   lg: { box: 64, font: 24, border: 2.5 },
   xl: { box: 88, font: 32, border: 3 },
+  "2xl": { box: 112, font: 40, border: 3.5 },
 };
 
 export const UserAvatar: React.FC<UserAvatarProps> = ({

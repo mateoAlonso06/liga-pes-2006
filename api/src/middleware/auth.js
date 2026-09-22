@@ -61,10 +61,11 @@ export async function canManageTournament(user, idTorneo, dbInstance) {
   if (!idTorneo) return false;
 
   const result = await dbInstance.execute({
-    sql: 'SELECT id_organizador FROM torneo WHERE id_torneo = ?',
-    args: [idTorneo],
+    sql: `SELECT 1 FROM torneo WHERE id_torneo = ? AND id_organizador = ?
+          UNION
+          SELECT 1 FROM torneo_administrador WHERE id_torneo = ? AND id_usuario = ?`,
+    args: [idTorneo, user.id, idTorneo, user.id],
   });
 
-  if (result.rows.length === 0) return false;
-  return Number(result.rows[0].id_organizador) === Number(user.id);
+  return result.rows.length > 0;
 }
