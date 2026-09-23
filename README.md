@@ -2,8 +2,6 @@
 
 Sistema de gestión para ligas y torneos de fútbol (ej. PES 2006 y torneos locales). Permite administrar planteles, fixtures, moderación comunitaria de resultados, cómputo automático de posiciones, estadísticas y módulo de pronósticos deportivos (Prode).
 
-> 🗺️ **Roadmap de migración:** El plan de etapas para la migración del cliente legacy hacia React está detallado en [ROADMAP.md](ROADMAP.md).
-
 ---
 
 ## 🚀 Características Principales
@@ -69,8 +67,7 @@ flowchart TD
 │
 ├── docs/                 # Documentación técnica complementaria y planes de diseño
 ├── package.json          # Configuración de workspaces y scripts raíz
-├── vercel.json           # Configuración de despliegue en Vercel
-└── ROADMAP.md            # Estado de hitos y progreso de migración
+└── vercel.json           # Configuración de despliegue en Vercel
 ```
 
 ---
