@@ -21,19 +21,20 @@ Sistema de gestión para ligas y torneos de fútbol (ej. PES 2006 y torneos loca
 El proyecto está diseñado bajo principios de desacoplamiento y **Clean Architecture**:
 
 ```mermaid
-graph TD
-    subgraph Frontend Moderno ["Frontend (frontend/client)"]
-        UI[Componentes React / UI] --> Hooks[Custom Hooks]
-        Hooks --> Domain[Dominio Puro / Reglas de Negocio\n(standings, stats, fixture, sorteo, knockout)]
-        Hooks -.->|Fetch / HTTP| API[API REST Express]
+flowchart TD
+    subgraph frontend ["Frontend (frontend/client)"]
+        UI["Componentes React / UI"] --> Hooks["Custom Hooks"]
+        Hooks --> Domain["Dominio Puro / Reglas de Negocio<br/>(standings, stats, fixture, sorteo, knockout)"]
     end
 
-    subgraph Backend ["Backend API (api/)"]
-        API --> AuthMW[Middleware Auth / RBAC]
-        API --> Routes[Rutas Express\n(torneos, equipos, personas, partidos, propuestas, prode)]
-        Routes --> LibSQL[Driver @libsql/client]
-        LibSQL --> DB[(Base de Datos\nSQLite / Turso)]
+    subgraph backend ["Backend API (api/)"]
+        API["API REST Express"] --> AuthMW["Middleware Auth / RBAC"]
+        API --> Routes["Rutas Express<br/>(torneos, equipos, personas, partidos, propuestas, prode)"]
+        Routes --> LibSQL["Driver @libsql/client"]
+        LibSQL --> DB[("Base de Datos<br/>SQLite / Turso")]
     end
+
+    Hooks -.->|"Fetch / HTTP"| API
 ```
 
 ### Stack Tecnológico
