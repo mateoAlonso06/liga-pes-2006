@@ -163,6 +163,53 @@ describe("domain/proposals - findPendingRoundsForPair", () => {
     const pending = findPendingRoundsForPair(mockPlayers, matches, "1", "4", "ida_vuelta");
     assert.deepEqual(pending, [1, 4]);
   });
+
+  it("returns round as pending if scheduled match exists in fixture with played false", () => {
+    const matches: Match[] = [
+      {
+        id: "m1",
+        playerAId: "1",
+        playerBId: "4",
+        goalsA: 0,
+        goalsB: 0,
+        played: false,
+        round: 1,
+        scorers: [],
+        redCards: [],
+      },
+    ];
+    const pending = findPendingRoundsForPair(mockPlayers, matches, "1", "4", "ida");
+    assert.deepEqual(pending, [1]);
+  });
+
+  it("returns only pending round when ida is played but vuelta is pending in ida_vuelta", () => {
+    const matches: Match[] = [
+      {
+        id: "m1",
+        playerAId: "1",
+        playerBId: "4",
+        goalsA: 2,
+        goalsB: 1,
+        played: true,
+        round: 1,
+        scorers: [],
+        redCards: [],
+      },
+      {
+        id: "m2",
+        playerAId: "4",
+        playerBId: "1",
+        goalsA: 0,
+        goalsB: 0,
+        played: false,
+        round: 4,
+        scorers: [],
+        redCards: [],
+      },
+    ];
+    const pending = findPendingRoundsForPair(mockPlayers, matches, "1", "4", "ida_vuelta");
+    assert.deepEqual(pending, [4]);
+  });
 });
 
 describe("domain/proposals - mapProposalInputToPayload", () => {
