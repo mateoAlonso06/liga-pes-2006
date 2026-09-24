@@ -93,6 +93,7 @@ export function findPendingRoundsForPair(
     if (hasPairing) {
       const alreadyPlayed = matches.some(
         (m) =>
+          Boolean(m.played) &&
           m.round === roundNumber &&
           ((m.playerAId === playerAId && m.playerBId === playerBId) ||
             (m.playerAId === playerBId && m.playerBId === playerAId))
